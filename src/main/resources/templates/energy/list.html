@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>에너지 사용량 조회</title>
+    <style>
+        body {
+            font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
+            margin: 40px;
+            color: #1f2933;
+            background-color: #f5f7fa;
+        }
+        h1 {
+            margin-bottom: 24px;
+            color: #0b7285;
+        }
+        .filter-info {
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #52606d;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+        }
+        thead {
+            background-color: #0b7285;
+            color: #ffffff;
+        }
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e4e7eb;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+        tbody tr:hover {
+            background-color: #e3f6f5;
+        }
+        .empty {
+            padding: 32px 0;
+            text-align: center;
+            color: #9aa5b1;
+        }
+        .filter-form {
+            display: flex;
+            gap: 16px;
+            align-items: flex-end;
+            margin-bottom: 24px;
+            background-color: #ffffff;
+            padding: 16px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+        }
+        .filter-form .field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .filter-form label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #0b7285;
+        }
+        .filter-form input[type="number"],
+        .filter-form input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #cbd2d9;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 140px;
+        }
+        .filter-form button,
+        .filter-form a.button-link {
+            padding: 10px 18px;
+            border-radius: 6px;
+            border: none;
+            background-color: #0b7285;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .filter-form button:hover,
+        .filter-form a.button-link:hover {
+            background-color: #095d6b;
+        }
+        .filter-form a.button-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .meta {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .meta div {
+            background-color: #ffffff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+        }
+        .meta span {
+            font-weight: 600;
+            color: #0b7285;
+        }
+        .error {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background-color: #ffe3e3;
+            color: #c92a2a;
+            border: 1px solid #ffa8a8;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<h1>에너지 사용량 조회</h1>
+
+<div id="errorBox" class="error" th:classappend="${errorMessage == null} ? ' hidden' : ''"
+     th:text="${errorMessage != null ? errorMessage : ''}">
+    에너지 데이터를 조회하는 중 오류가 발생했습니다.
+</div>
+
+<form class="filter-form" th:action="@{/}" method="get">
+    <div class="field">
+        <label for="cityId">시 ID</label>
+        <input id="cityId" name="cityId" type="number" min="0"
+               th:value="${selectedCityId}" placeholder="예: 11000" />
+    </div>
+    <div class="field">
+        <label for="countyId">군/구 ID</label>
+        <input id="countyId" name="countyId" type="number" min="0"
+               th:value="${selectedCountyId}" placeholder="예: 11140" />
+    </div>
+    <button type="submit">조회</button>
+    <a class="button-link" th:href="@{/}">초기화</a>
+</form>
+
+<div class="meta">
+    <div>선택된 시 ID: <span id="selectedCity" th:text="${selectedCityId != null ? selectedCityId : '전체'}">전체</span></div>
+    <div>선택된 군/구 ID: <span id="selectedCounty" th:text="${selectedCountyId != null ? selectedCountyId : '전체'}">전체</span></div>
+    <div>총 데이터 건수: <span id="totalCount" th:text="${energyList.size()}">0</span></div>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>시</th>
+        <th>군/구</th>
+        <th>연월</th>
+        <th>전기 사용량</th>
+        <th>전기 누락 여부</th>
+        <th>가스 사용량</th>
+        <th>가스 누락 여부</th>
+    </tr>
+    </thead>
+    <tbody id="energyBody">
+    <tr th:if="${energyList.isEmpty()}">
+        <td class="empty" colspan="7">조회된 데이터가 없습니다.</td>
+    </tr>
+    <tr th:each="item : ${energyList}">
+        <td th:text="${item.cityName}">서울특별시</td>
+        <td th:text="${item.countyName}">중구</td>
+        <td th:text="${item.yearMonth}">2024-01</td>
+        <td th:text="${item.useElect}">0</td>
+        <td th:text="${item.missingElectYn}">N</td>
+        <td th:text="${item.useGas}">0</td>
+        <td th:text="${item.missingGasYn}">N</td>
+    </tr>
+    </tbody>
+</table>
+
+<script th:inline="javascript">
+    const initialData = /*[[${energyList}]]*/ [];
+    const initialCityId = /*[[${selectedCityId}]]*/ null;
+    const initialCountyId = /*[[${selectedCountyId}]]*/ null;
+    const initialErrorMessage = /*[[${errorMessage}]]*/ null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.querySelector('.filter-form');
+        const tbody = document.getElementById('energyBody');
+        const selectedCity = document.getElementById('selectedCity');
+        const selectedCounty = document.getElementById('selectedCounty');
+        const totalCount = document.getElementById('totalCount');
+        const errorBox = document.getElementById('errorBox');
+
+        const showLoading = () => {
+            tbody.innerHTML = '';
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 7;
+            cell.className = 'empty';
+            cell.textContent = '데이터를 불러오는 중입니다...';
+            row.appendChild(cell);
+            tbody.appendChild(row);
+        };
+
+        const setError = (message) => {
+            if (!errorBox) {
+                return;
+            }
+            if (message) {
+                errorBox.textContent = message;
+                errorBox.classList.remove('hidden');
+            } else {
+                errorBox.textContent = '';
+                errorBox.classList.add('hidden');
+            }
+        };
+
+        const renderRows = (items) => {
+            tbody.innerHTML = '';
+            if (!items || items.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 7;
+                cell.className = 'empty';
+                cell.textContent = '조회된 데이터가 없습니다.';
+                row.appendChild(cell);
+                tbody.appendChild(row);
+                return;
+            }
+
+            items.forEach((item) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.cityName ?? ''}</td>
+                    <td>${item.countyName ?? ''}</td>
+                    <td>${item.yearMonth ?? ''}</td>
+                    <td>${item.useElect ?? ''}</td>
+                    <td>${item.missingElectYn ?? ''}</td>
+                    <td>${item.useGas ?? ''}</td>
+                    <td>${item.missingGasYn ?? ''}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        };
+
+        const updateMeta = (cityId, countyId, count) => {
+            selectedCity.textContent = cityId != null && cityId !== '' ? cityId : '전체';
+            selectedCounty.textContent = countyId != null && countyId !== '' ? countyId : '전체';
+            totalCount.textContent = count;
+        };
+
+        const fetchEnergy = async (cityId, countyId) => {
+            const params = new URLSearchParams();
+            if (cityId) {
+                params.append('cityId', cityId);
+            }
+            if (countyId) {
+                params.append('countyId', countyId);
+            }
+
+            const query = params.toString();
+            const url = query ? `/api/energy?${query}` : '/api/energy';
+
+            showLoading();
+            try {
+                const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                let payload = {};
+                try {
+                    payload = await response.json();
+                } catch (_) {
+                    payload = {};
+                }
+
+                if (!response.ok) {
+                    throw new Error(payload.errorMessage || '에너지 데이터를 불러오는 중 오류가 발생했습니다.');
+                }
+
+                renderRows(payload.items);
+                updateMeta(payload.cityId, payload.countyId, payload.count ?? (payload.items ? payload.items.length : 0));
+                setError(null);
+            } catch (error) {
+                renderRows([]);
+                updateMeta(cityId || null, countyId || null, 0);
+                setError(error.message || '에너지 데이터를 불러오는 중 오류가 발생했습니다.');
+            }
+        };
+
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const cityId = form.cityId.value.trim();
+            const countyId = form.countyId.value.trim();
+            fetchEnergy(cityId, countyId);
+        });
+
+        if (initialData && initialData.length > 0) {
+            renderRows(initialData);
+            updateMeta(initialCityId, initialCountyId, initialData.length);
+        } else {
+            renderRows([]);
+            updateMeta(initialCityId, initialCountyId, 0);
+        }
+        setError(initialErrorMessage);
+
+        fetchEnergy(
+            initialCityId != null && initialCityId !== '' ? initialCityId : undefined,
+            initialCountyId != null && initialCountyId !== '' ? initialCountyId : undefined
+        );
+    });
+</script>
+
+</body>
+</html>

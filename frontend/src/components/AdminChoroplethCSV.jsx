@@ -1,0 +1,247 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
+import L from "leaflet";
+import styles from "./AdminChoropleth.module.css";
+import { loadEnergyCSV } from "../services/energyCsvLoader";
+
+/** 지도 로드 후 GeoJSON 범위로 자동 맞춤 */
+function FitBounds({ geo }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!geo) return;
+    const g = L.geoJSON(geo);
+    const b = g.getBounds();
+    if (b.isValid()) map.fitBounds(b, { padding: [10, 10] });
+  }, [geo, map]);
+  return null;
+}
+
+// 문자열 정규화(공백/특수문자 제거 + 소문자)
+const norm = (v) =>
+  String(v ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[·()\[\]{}]/g, "")
+    .toLowerCase();
+
+const ENERGY_OPTS = [
+  { key: "electric", label: "전기(MWh)", unit: "MWh" },
+  { key: "gas", label: "가스(천㎥)", unit: "천㎥" },
+  { key: "heat", label: "지역난방(Gcal)", unit: "Gcal" },
+];
+
+export default function AdminChoroplethCSV({
+  csvUrl = "/data/전체_에너지_2020-2025_통합_v2.csv",
+  sidoGeoUrl = "/korea/SIDO_MAP_2022.json",
+  sggGeoUrl = "/korea/sgg.json",
+  defaultLevel = "sido", // 'sido' | 'sgg'
+}) {
+  const [raw, setRaw] = useState([]);
+  const [geoSido, setGeoSido] = useState(null);
+  const [geoSgg, setGeoSgg] = useState(null);
+
+  const [level, setLevel] = useState(defaultLevel);
+  const [year, setYear] = useState(null);
+  const [month, setMonth] = useState(1);
+  const [energy, setEnergy] = useState("electric");
+
+  // CSV + GeoJSON 로딩
+  useEffect(() => {
+    loadEnergyCSV(csvUrl).then((rows) => {
+      setRaw(rows);
+      const ys = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => a - b);
+      setYear(ys.at(-1) ?? null);
+    });
+  }, [csvUrl]);
+
+  useEffect(() => {
+    fetch(sidoGeoUrl).then((r) => r.json()).then(setGeoSido).catch(console.error);
+    fetch(sggGeoUrl).then((r) => r.json()).then(setGeoSgg).catch(console.error);
+  }, [sidoGeoUrl, sggGeoUrl]);
+
+  const years = useMemo(
+    () => Array.from(new Set(raw.map((r) => r.year))).sort((a, b) => a - b),
+    [raw]
+  );
+
+  // 필터: 선택한 연/월/에너지원
+  const filtered = useMemo(() => {
+    const m = Math.min(Math.max(month, 1), 12);
+    return raw.filter(
+      (r) => (!year || r.year === year) && r.month === m && r.energy === energy
+    );
+  }, [raw, year, month, energy]);
+
+  // 행정구역별 합계 맵 (key -> sum)
+  const valueMap = useMemo(() => {
+    const vm = new Map();
+    for (const r of filtered) {
+      const key = level === "sido" ? norm(r.sido) : norm(r.sgg);
+      if (!key) continue;
+      vm.set(key, (vm.get(key) || 0) + (Number(r.value) || 0));
+    }
+    return vm;
+  }, [filtered, level]);
+
+  const activeGeo = level === "sido" ? geoSido : geoSgg;
+
+  // 색상 스케일(5단계)
+  const scale = useMemo(() => {
+    const vals = Array.from(valueMap.values()).filter((v) => Number.isFinite(v));
+    if (!vals.length) return { stops: [0], colors: ["#eeeeee"] };
+    vals.sort((a, b) => a - b);
+    const q = (p) => vals[Math.floor((vals.length - 1) * p)];
+    const stops = [q(0.1), q(0.3), q(0.5), q(0.7), q(0.9)]; // 분위수
+    const colors = ["#e6f2ff", "#b3d4ff", "#80b6ff", "#4d98ff", "#1a7aff"]; // 파랑계열
+    const colorize = (v) => {
+      if (v == null) return "#dddddd";
+      if (v <= stops[0]) return colors[0];
+      if (v <= stops[1]) return colors[1];
+      if (v <= stops[2]) return colors[2];
+      if (v <= stops[3]) return colors[3];
+      return colors[4];
+    };
+    return { stops, colors, colorize };
+  }, [valueMap]);
+
+  const energyUnit = useMemo(() => {
+    return (ENERGY_OPTS.find((e) => e.key === energy) || ENERGY_OPTS[0]).unit;
+  }, [energy]);
+
+  // GeoJSON 스타일/팝업
+  const onEachFeature = (feature, layer) => {
+    const name =
+      feature.properties?.CTP_KOR_NM || // 시도
+      feature.properties?.SIDO ||
+      feature.properties?.SIG_KOR_NM || // 시군구
+      feature.properties?.adm_nm ||
+      feature.properties?.name ||
+      "";
+
+    const key = norm(name);
+    const v = valueMap.get(key);
+    layer.bindPopup(
+      `<div style="font-weight:600;margin-bottom:4px">${name}</div>
+       <div>합계: <b>${v != null ? v.toLocaleString() : "-"}</b> ${energyUnit}</div>`
+    );
+  };
+
+  const styleFn = (feature) => {
+    const name =
+      feature.properties?.CTP_KOR_NM ||
+      feature.properties?.SIDO ||
+      feature.properties?.SIG_KOR_NM ||
+      feature.properties?.adm_nm ||
+      feature.properties?.name ||
+      "";
+    const v = valueMap.get(norm(name));
+    const fillColor = scale.colorize ? scale.colorize(v) : "#dddddd";
+    return {
+      fillColor,
+      weight: 1,
+      opacity: 1,
+      color: "#666",
+      fillOpacity: 0.75,
+    };
+  };
+
+  return (
+    <div className={styles.card}>
+      {/* 툴바 */}
+      <div className={styles.toolbar}>
+        <label className={styles.lbl}>행정단계</label>
+        <select
+          className={styles.select}
+          value={level}
+          onChange={(e) => setLevel(e.target.value)}
+        >
+          <option value="sido">시도</option>
+          <option value="sgg">시군구</option>
+        </select>
+
+        <label className={styles.lbl}>연도</label>
+        <select
+          className={styles.select}
+          value={year ?? ""}
+          onChange={(e) => setYear(+e.target.value)}
+        >
+          {years.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+
+        <label className={styles.lbl}>에너지원</label>
+        <select
+          className={styles.select}
+          value={energy}
+          onChange={(e) => setEnergy(e.target.value)}
+        >
+          {ENERGY_OPTS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        <label className={styles.lbl}>월</label>
+        <input
+          className={styles.range}
+          type="range"
+          min="1"
+          max="12"
+          step="1"
+          value={month}
+          onChange={(e) => setMonth(+e.target.value)}
+        />
+        <span className={styles.badge}>{month}월</span>
+      </div>
+
+      {/* 지도 */}
+      <div className={styles.mapbox}>
+        <div className={styles.legend}>
+          <div className={styles.legendTitle}>범례 (합계, {energyUnit})</div>
+          <div className={styles.legendRow}>
+            {scale.colors.map((c, i) => (
+              <div key={i} className={styles.legendItem}>
+                <span
+                  className={styles.swatch}
+                  style={{ background: c }}
+                  aria-hidden
+                />
+                <span className={styles.legendText}>
+                  {i === 0
+                    ? `≤ ${Math.round(scale.stops[0]).toLocaleString()}`
+                    : i === scale.colors.length - 1
+                    ? `> ${Math.round(scale.stops[3]).toLocaleString()}`
+                    : `${Math.round(scale.stops[i - 1]).toLocaleString()}–${Math.round(
+                        scale.stops[i]
+                      ).toLocaleString()}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <MapContainer
+          center={[36.5, 127.8]}
+          zoom={7}
+          minZoom={5}
+          maxZoom={13}
+          style={{ height: "100%", width: "100%" }}
+        >
+          <TileLayer
+            attribution="&copy; OpenStreetMap"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {activeGeo && (
+            <>
+              <GeoJSON data={activeGeo} style={styleFn} onEachFeature={onEachFeature} />
+              <FitBounds geo={activeGeo} />
+            </>
+          )}
+        </MapContainer>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,318 @@
+// src/pages/GasEmission.jsx
+// 에너지 사용량 페이지(EnergyUsage.jsx)와 동일한 레이아웃 + 그래프 스타일로
+// 온실가스 배출량 현황 페이지 구현
+
+import React, { useEffect, useMemo, useState } from "react";
+import styles from "./EnergyUsage.module.css"; // 에너지 페이지와 같은 레이아웃 사용
+import HeatBoxSimple from "../components/HeatBoxSimple";
+
+/* ------------------------- 내부 유틸: API prefix ------------------------- */
+function buildApiPrefix(apiBase) {
+  const base = (apiBase ?? "").replace(/\/$/, "");
+  return base.endsWith("/api") ? base : `${base}/api`;
+}
+
+/* ------------------------- YEAR_MONTH 정규화 ------------------------- */
+function ymToYYYYMM(x) {
+  const m = String(x ?? "").match(/(\d{4})\D*?(\d{1,2})/);
+  if (!m) return null;
+  return `${m[1]}${m[2].padStart(2, "0")}`;
+}
+
+/* ------------------------- 온실가스(전기/가스) 월별 합계 로드 ------------------------- */
+/**
+ * 백엔드 응답 형식은 에너지쪽이랑 비슷하다고 가정.
+ * - yearMonth / YEAR_MONTH / ym / YM 중 하나에 "2025-01" 또는 "202501" 형태
+ * - 전기 부문 온실가스: elecCo2eq / ELEC_CO2EQ / elecEmission / ELEC_EMISSION 등
+ * - 가스 부문 온실가스: gasCo2eq / GAS_CO2EQ / gasEmission / GAS_EMISSION 등
+ *
+ * 실제 컬럼명에 맞게 아래 pick() 후보 키 목록만 수정해주면 된다.
+ */
+async function fetchCountryEmissionMonthly({ apiBase, year }) {
+  const prefix = buildApiPrefix(apiBase);
+
+  // 1순위: /api/emission/country?year=YYYY
+  // 2순위: /api/emission/country
+  // 3순위: /api/emission?cityId=0&countyId=0
+  const tryUrls = [
+    `${prefix}/emission/country?year=${year}`,
+    `${prefix}/emission/country`,
+    `${prefix}/emission?cityId=0&countyId=0`,
+  ];
+
+  let items = null;
+  for (const url of tryUrls) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const data = await r.json();
+      items = Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data)
+        ? data
+        : null;
+      if (items && items.length) break;
+    } catch {
+      // 다음 URL 시도
+    }
+  }
+
+  // 실패하면 0 배열 반환
+  if (!items) return { elec: Array(12).fill(0), gas: Array(12).fill(0) };
+
+  const elec = Array(12).fill(0); // 전기 부문 온실가스
+  const gas = Array(12).fill(0);  // 가스 부문 온실가스
+
+  for (const row of items) {
+    const flat = flatten(row);
+    const ym = ymToYYYYMM(
+      pick(flat, ["YEAR_MONTH", "yearMonth", "YM", "ym"])
+    );
+    if (!ym || ym.slice(0, 4) !== String(year)) continue;
+
+    const mm = Number(ym.slice(4, 6));
+    if (!Number.isFinite(mm) || mm < 1 || mm > 12) continue;
+
+    const e = num(
+      pick(flat, [
+        "ELEC_CO2EQ",
+        "elecCo2eq",
+        "elecEmission",
+        "ELEC_EMISSION",
+        "elecCo2",
+      ])
+    );
+    const g = num(
+      pick(flat, [
+        "GAS_CO2EQ",
+        "gasCo2eq",
+        "gasEmission",
+        "GAS_EMISSION",
+        "gasCo2",
+      ])
+    );
+
+    elec[mm - 1] += e;
+    gas[mm - 1] += g;
+  }
+
+  return { elec, gas };
+}
+
+/* ------------------------- 소도구 ------------------------- */
+function flatten(obj, prefix = "", out = {}) {
+  for (const [k, v] of Object.entries(obj || {})) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === "object" && !Array.isArray(v)) flatten(v, key, out);
+    else out[key] = v;
+  }
+  return out;
+}
+function pick(obj, keys) {
+  for (const k of keys) if (k in obj) return obj[k];
+}
+const num = (v) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+};
+
+/* ------------------------- 에너지 페이지와 동일한 미니 막대그래프 ------------------------- */
+function ChartMini({ title, unit, data, color = "#2a84ff" }) {
+  const max = Math.max(1, ...data.map((v) => Number(v) || 0));
+  const months = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+
+  return (
+    <div
+      style={{
+        border: "1px solid #e6e8ef",
+        borderRadius: 12,
+        padding: "12px 12px 10px",
+        background: "#fff",
+        marginTop: 12,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+        {title}{" "}
+        <span style={{ color: "#889", fontWeight: 500 }}>({unit})</span>
+      </div>
+
+      <div
+        style={{
+          height: 140,
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 6,
+        }}
+      >
+        {data.map((v, i) => {
+          const h = Math.round(((Number(v) || 0) / max) * 120); // 막대 최대 120px
+          return (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+              }}
+            >
+              <div
+                title={`${months[i]}월: ${Number(v).toLocaleString()}`}
+                style={{
+                  width: 14,
+                  height: h,
+                  borderRadius: 4,
+                  background: color,
+                  opacity: 0.9,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "#777",
+                  marginTop: 4,
+                }}
+              >
+                {months[i]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ===================================================================== */
+
+export default function GasEmission() {
+  const now = useMemo(() => new Date(), []);
+  const [year, setYear] = useState(now.getFullYear());
+  const [sector, setSector] = useState("elec"); // 'elec' | 'gas'
+
+  // 프록시(/api) 권장: .env에 VITE_API_BASE=/api
+  const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
+
+  // 최근 6년
+  const years = useMemo(() => {
+    const end = now.getFullYear();
+    const start = end - 5;
+    return Array.from({ length: end - start + 1 }, (_, i) => end - i);
+  }, [now]);
+
+  // 왼쪽 2개 그래프용 상태
+  const [elecMonthly, setElecMonthly] = useState(Array(12).fill(0));
+  const [gasMonthly, setGasMonthly] = useState(Array(12).fill(0));
+  const [chartLoading, setChartLoading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setChartLoading(true);
+        const res = await fetchCountryEmissionMonthly({ apiBase: API_BASE, year });
+        if (!alive) return;
+        setElecMonthly(res.elec);
+        setGasMonthly(res.gas);
+      } finally {
+        if (alive) setChartLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [API_BASE, year]);
+
+  return (
+    <div className={styles.wrap}>
+      <div className={styles.container}>
+        {/* 상단 타이틀 영역 */}
+        <header className={styles.header}>
+          <h1>온실가스 배출량 현황</h1>
+          <p>
+            전국 에너지 사용 데이터를 바탕으로 월별·지역별 온실가스 배출량 패턴을
+            시각적으로 확인할 수 있습니다.
+          </p>
+        </header>
+
+        <div className={styles.layout}>
+          {/* 왼쪽: 필터 + (전기/가스) 2개 그래프 */}
+          <aside className={styles.side}>
+            <div className={styles.filterCard}>
+              <div className={styles.cardTitle}>날짜 범위 선택</div>
+              <div className={styles.formRow}>
+                <label className={styles.label}>연도</label>
+                <select
+                  className={styles.selectBig}
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}년
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={styles.sep} />
+
+              <div className={styles.cardTitle}>데이터 필터</div>
+              <div className={styles.formRow}>
+                <label className={styles.label}>배출원</label>
+                <select
+                  className={styles.select}
+                  value={sector}
+                  onChange={(e) => setSector(e.target.value)}
+                >
+                  <option value="elec">전기 부문</option>
+                  <option value="gas">가스 부문</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 에너지 페이지와 동일한 두 개 막대그래프 */}
+            <div style={{ marginTop: 8 }}>
+              <ChartMini
+                title="전기 부문 온실가스 배출량 통계"
+                unit="천 tCO₂eq (추정)"
+                data={elecMonthly}
+                color="#2a84ff"
+              />
+              <ChartMini
+                title="가스 부문 온실가스 배출량 통계"
+                unit="천 tCO₂eq (추정)"
+                data={gasMonthly}
+                color="#ff7a00"
+              />
+              {chartLoading && (
+                <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
+                  월별 배출량 합계 로딩 중…
+                </div>
+              )}
+            </div>
+          </aside>
+
+          {/* 오른쪽: 히트박스 지도 카드 */}
+          <section className={styles.card}>
+            <div className={styles.cardHead}>
+              <h3>지역별 온실가스 배출량 (히트박스)</h3>
+              {/* 에너지 페이지처럼, 재생 옆에는 아무 텍스트도 안 띄움 */}
+            </div>
+
+            <div className={styles.panel} style={{ height: 720 }}>
+              <HeatBoxSimple
+                apiBase={API_BASE}
+                year={year}
+                metric={sector} // 'elec' | 'gas' 그대로 전달
+                autoPlay={false}
+                intervalMs={900}
+                sggGeoUrl="/korea/sgg.json"
+                initialZoomStep={-1}
+              />
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}

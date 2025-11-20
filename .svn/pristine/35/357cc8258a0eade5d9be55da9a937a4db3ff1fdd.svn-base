@@ -1,0 +1,194 @@
+import { useEffect, useRef } from "react";
+import Chart from "chart.js/auto";
+
+export default function ChartSection({
+  selectedRegion,
+  selectedRegionData,
+  nationalData,
+  sidoData,
+  energyType,
+  mainTab,
+}) {
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+
+  useEffect(() => {
+
+    if (!selectedRegionData || selectedRegionData.length === 0) return;
+
+    const rawData = selectedRegionData.items || selectedRegionData;
+
+    const cleanData = rawData.filter((d) => {
+      const ym = Number(d.yearMonth);
+      return ym >= 202001 && ym <= 202506;
+    });
+
+    if (cleanData.length === 0) return;
+
+    const allMonths = [];
+    for (let y = 2020; y <= 2025; y++) {
+      for (let m = 1; m <= 12; m++) {
+        const ym = `${y}${String(m).padStart(2, "0")}`;
+        allMonths.push(ym);
+        if (ym === "202506") break;
+      }
+    }
+
+    const getVal = (d) =>
+      energyType === "electric" ? Number(d.useElect || 0) : Number(d.useGas || 0);
+
+    let labels = allMonths;
+    let values = [];
+    let compareValues = [];
+
+    // ==================================================
+    // 1) 메인 데이터 계산 — 평균 기준
+    // ==================================================
+
+    // 🔵 전국 선택 → nationalData 평균
+    if (!selectedRegion) {
+      const map = {};
+      (nationalData || []).forEach((d) => {
+        if (!map[d.yearMonth]) map[d.yearMonth] = [];
+        map[d.yearMonth].push(getVal(d));
+      });
+
+      values = labels.map((ym) => {
+        const arr = map[ym] || [];
+        return arr.length > 0 ? arr.reduce((a,b)=>a+b,0) / arr.length : 0;
+      });
+    }
+
+    // 🔵 시도 선택 → sidoData 평균
+    else if (!selectedRegion.countyId) {
+      const map = {};
+      // console.log(sidoData);
+      (sidoData || []).forEach((d) => {
+        if (!map[d.yearMonth]) map[d.yearMonth] = [];
+        map[d.yearMonth].push(getVal(d));
+      });
+
+      values = labels.map((ym) => {
+        const arr = map[ym] || [];
+        return arr.length > 0 ? arr.reduce((a,b)=>a+b,0) / arr.length : 0;
+      });
+    }
+
+    // 🔵 시군구 선택 → 단일 시군구 값
+    else {
+      const map = new Map();
+      cleanData.forEach((d) => {
+        if (Number(d.countyId) === Number(selectedRegion.countyId)) {
+          map.set(d.yearMonth, getVal(d));
+        }
+      });
+
+      values = labels.map((ym) => map.get(ym) ?? 0);
+    }
+
+    // ==================================================
+    // 2) 비교선 계산 — 평균 기준
+    // ==================================================
+
+    // 전국 선택 → 비교선 없음
+    if (!selectedRegion) {
+      compareValues = [];
+    }
+
+    // 시도 선택 → 비교선 = 전국 평균
+    else if (!selectedRegion.countyId) {
+      const natMap = {};
+      (nationalData || []).forEach((d) => {
+        if (!natMap[d.yearMonth]) natMap[d.yearMonth] = [];
+        natMap[d.yearMonth].push(getVal(d));
+      });
+
+      compareValues = labels.map((ym) => {
+        const arr = natMap[ym] || [];
+        return arr.length > 0 ? arr.reduce((a,b)=>a+b,0) / arr.length : 0;
+      });
+    }
+
+    // 시군구 선택 → 비교선 = 시도 평균
+    else {
+      const sidoMapObj = {};
+      (sidoData || []).forEach((d) => {
+        if (!sidoMapObj[d.yearMonth]) sidoMapObj[d.yearMonth] = [];
+        sidoMapObj[d.yearMonth].push(getVal(d));
+      });
+
+      compareValues = labels.map((ym) => {
+        const arr = sidoMapObj[ym] || [];
+        return arr.length > 0 ? arr.reduce((a,b)=>a+b,0) / arr.length : 0;
+      });
+    }
+
+    // ==================================================
+    // 3) 차트 생성 (축 1개)
+    // ==================================================
+
+    if (chartInstance.current) chartInstance.current.destroy();
+    const ctx = chartRef.current.getContext("2d");
+
+    const datasets = [
+      {
+        label:
+          !selectedRegion
+            ? "전국 평균"
+            : selectedRegion.countyId
+            ? `${selectedRegion.countyName}사용량`
+            : `${selectedRegion.cityName} 평균`,
+        data: values,
+        borderColor: "#3b82f6",
+        backgroundColor: "#3b82f633",
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2,
+        pointRadius: 2,
+      },
+    ];
+
+    if (compareValues.length > 0) {
+      datasets.push({
+        label:
+          !selectedRegion.countyId
+            ? "전국 평균"
+            : `${selectedRegion.cityName} 평균`,
+        data: compareValues,
+        borderColor: "#ef4444",
+        backgroundColor: "#ef444433",
+        fill: false,
+        tension: 0.3,
+        borderWidth: 2,
+        pointRadius: 2,
+      });
+    }
+
+    chartInstance.current = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }, [
+    selectedRegion,
+    selectedRegionData,
+    nationalData,
+    sidoData,
+    energyType,
+    mainTab,
+  ]);
+
+  return (
+    <div style={{ width: "100%", height: "420px", paddingTop: "8px" }}>
+      <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
+}

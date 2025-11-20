@@ -1,0 +1,275 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Line } from "react-chartjs-2";
+import { Chart } from "chart.js";
+import "chartjs-adapter-date-fns";
+import "chart.js/auto";
+import zoomPlugin from "chartjs-plugin-zoom";
+
+const MODEL_APP_API="http://192.168.0.47:5000"
+
+
+const SIDO_CODE_REMAP = {
+  // 51: 42, // 필요 시만 활성화
+};
+
+// ✅ 전국 평균 계산용 시도코드
+const SIDO_CODES = [11, 26, 27, 28, 29, 30, 31, 36, 41, 42, 43, 44, 45, 46, 47, 48, 49];
+const INIT_MIN_STR = "2020-01-01";
+const INIT_MAX_STR = "2030-12-01";
+
+export default function TemperatureForecast({ selectedRegion }) {
+  const [actualRows, setActualRows] = useState([]);
+  const [forecastRows, setForecastRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const [isNational, setIsNational] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const abortRef = useRef(null);
+  const chartRef = useRef(null);
+
+
+  const blinkingStyle = {
+    animation: "blink 1s infinite",
+    fontSize: "14px",
+    color: "#555",
+  };
+
+  const blinkKeyframes = `
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.2; }
+  100% { opacity: 1; }
+}
+`;
+
+
+  if (!window.__chartZoomRegistered) {
+    window.__chartZoomRegistered = true;
+    Chart.register(zoomPlugin);
+  }
+
+  // ✅ 지역 선택 상태 감지
+  const query = useMemo(() => {
+    if (!selectedRegion) return null;
+    const raw = Number(selectedRegion.cityId || 0);
+    const mapped = Number(SIDO_CODE_REMAP[raw] ?? raw);
+    return { code: mapped, name: selectedRegion.cityName || "" };
+  }, [selectedRegion]);
+
+  useEffect(() => {
+    if (selectedRegion?.cityId) {
+      setIsNational(false);
+    } else {
+      setIsNational(true);
+      setRefreshKey((k) => k + 1); // 시도로 돌아가기 시 재로드
+    }
+  }, [selectedRegion]);
+
+  // ✅ Flask 데이터 요청
+  useEffect(() => {
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const fetchNationalAverage = async () => {
+      // 시도별 데이터 모두 불러오기
+      const promises = SIDO_CODES.map(async (code) => {
+        const res = await fetch(`${MODEL_APP_API}/predict?code=${code}`, { signal: controller.signal });
+        if (!res.ok) return null;
+        return await res.json();
+      });
+      const results = (await Promise.all(promises)).filter(Boolean);
+
+      const actualMerged = new Map();
+      const forecastMerged = new Map();
+
+      results.forEach((r) => {
+        const actualList = r?.actual || [];
+        const forecastList = r?.forecast || [];
+        actualList.forEach(({ date, y }) => {
+          if (!actualMerged.has(date)) actualMerged.set(date, []);
+          actualMerged.get(date).push(y);
+        });
+        forecastList.forEach(({ date, y }) => {
+          if (!forecastMerged.has(date)) forecastMerged.set(date, []);
+          forecastMerged.get(date).push(y);
+        });
+      });
+
+      const avg = (vals) => {
+        const valid = vals.filter((v) => v != null);
+        return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+      };
+
+      const avgActual = Array.from(actualMerged.entries())
+        .map(([date, vals]) => ({ date, y: avg(vals) }))
+        .sort((a, b) => (a.date < b.date ? -1 : 1));
+      const avgForecast = Array.from(forecastMerged.entries())
+        .map(([date, vals]) => ({ date, y: avg(vals) }))
+        .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+      return { avgActual, avgForecast };
+    };
+
+    const fetchRegion = async (code) => {
+      const res = await fetch(`${MODEL_APP_API}/predict?code=${code}`, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    };
+
+    (async () => {
+      try {
+        setLoading(true);
+        setErr(null);
+
+        if (isNational) {
+          const { avgActual, avgForecast } = await fetchNationalAverage();
+          setActualRows(avgActual);
+          setForecastRows(avgForecast);
+          return;
+        }
+
+        const json = await fetchRegion(query.code);
+        const lastAnchor = json?.last_anchor || null;
+        const actual = Array.isArray(json?.actual) ? json.actual : [];
+        const forecast = Array.isArray(json?.forecast) ? json.forecast : [];
+        const combined = Array.isArray(json?.combined) ? json.combined : [];
+
+        const all = combined.length
+          ? combined
+          : [...actual, ...forecast].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+        let actRows = actual;
+        let forRows = forecast;
+        if (!actRows.length && all.length && lastAnchor) {
+          actRows = all.filter((d) => d.date < lastAnchor);
+          forRows = all.filter((d) => d.date >= lastAnchor);
+        }
+
+        setActualRows(actRows);
+        setForecastRows(forRows);
+      } catch (e) {
+        if (e.name !== "AbortError") setErr(e.message || "예측 요청 실패");
+      } finally {
+         // 현재 요청(controller)이 abort되지 않았을 때만 로딩 종료
+  if (!controller.signal.aborted) {
+    setLoading(false);
+  }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [isNational, query, refreshKey]);
+
+  // if (loading) return <p>📡 예측 데이터를 불러오는 중...</p>;
+  if (loading) {
+    return (
+      <div
+        style={{
+          height: 420,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <style>{blinkKeyframes}</style>
+        <span style={blinkingStyle}>📡 예측 데이터를 요청 중...</span>
+      </div>
+    );
+  }
+  if (err) return <p>⚠️ {err}</p>;
+  if (!actualRows.length && !forecastRows.length) return <p>데이터가 없습니다.</p>;
+
+  const allDates = [
+    ...new Set([...actualRows.map((r) => r.date), ...forecastRows.map((r) => r.date)]),
+  ].sort();
+
+  const dataMin = new Date(allDates[0]).getTime();
+  const dataMax = new Date(allDates[allDates.length - 1]).getTime();
+  const initMin = Math.max(new Date(INIT_MIN_STR).getTime(), dataMin);
+  const initMax = Math.min(new Date(INIT_MAX_STR).getTime(), dataMax);
+
+  const actMap = new Map(actualRows.map((r) => [r.date, r.y]));
+  const forMap = new Map(forecastRows.map((r) => [r.date, r.y]));
+
+  const data = {
+    labels: allDates,
+    datasets: [
+      {
+        label: isNational ? "전국 실제값 평균 (°C)" : "기본 온도 (°C)",
+        data: allDates.map((d) => actMap.get(d) ?? null),
+        borderColor: "#36A2EB",
+        backgroundColor: "rgba(54,162,235,0.15)",
+        pointRadius: 2,
+        fill: true,
+        tension: 0.3,
+      },
+      {
+        label: isNational ? "전국 예측값 평균 (°C)" : "예측 온도 (°C)",
+        data: allDates.map((d) => forMap.get(d) ?? null),
+        borderColor: "#FF6384",
+        backgroundColor: "rgba(255,99,132,0.2)",
+        pointRadius: 2,
+        fill: true,
+        tension: 0.3,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        type: "time",
+        time: { unit: "month", displayFormats: { month: "yyyy-MM" } },
+        min: initMin,
+        max: initMax,
+        title: { display: true, text: "기간" },
+      },
+      y: { title: { display: true, text: "기온 (°C)" } },
+    },
+    plugins: {
+      legend: { position: "top" },
+      zoom: {
+        limits: { x: { min: dataMin, max: dataMax } },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
+        pan: { enabled: true, mode: "x" },
+      },
+    },
+  };
+
+  const resetView = () => {
+    const chart = chartRef.current?.chart || chartRef.current;
+    if (!chart) return;
+    chart.resetZoom();
+    chart.options.scales.x.min = initMin;
+    chart.options.scales.x.max = initMax;
+    chart.update("none");
+  };
+
+  return (
+    <div style={{ height: 420 }}>
+      <Line ref={chartRef} data={data} options={options} />
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+        <span style={{ fontSize: 12, color: "#777" }}>
+          {isNational ? "🌏 전국 평균 (실제·예측)" : "🔵 기본 · 🔴 예측"} · 기간:{" "}
+          {allDates[0]?.slice(0, 7)} ~ {allDates[allDates.length - 1]?.slice(0, 7)}
+        </span>
+        <button
+          onClick={resetView}
+          style={{
+            fontSize: 12,
+            padding: "4px 8px",
+            border: "1px solid #ddd",
+            borderRadius: 6,
+            background: "#fff",
+          }}
+        >
+          초기 범위(2020~2030)
+        </button>
+      </div>
+    </div>
+  );
+}

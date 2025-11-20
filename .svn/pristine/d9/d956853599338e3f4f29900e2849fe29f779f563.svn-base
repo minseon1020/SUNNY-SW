@@ -1,0 +1,266 @@
+import React, { useState } from 'react'; // 1. useState가 import 되어 있는지 확인
+import { Line } from 'react-chartjs-2';
+import regionDistrictData from '../data/regionsData.json';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+
+// --- 차트 데이터 (기존과 동일) ---
+const areaChartData = {
+  labels: ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'],
+  datasets: [
+    {
+      label: '현재 소비량 (KWh)',
+      data: [25000, 22000, 26000, 24000, 25500, 23000],
+      fill: true,
+      borderColor: 'rgb(54, 162, 235)',
+      backgroundColor: 'rgba(54, 162, 235, 0.3)',
+      tension: 0.4,
+    },
+    {
+      label: '가스 소비량 (KWh)',
+      data: [9000, 8000, 9500, 8500, 9000, 8800],
+      fill: true,
+      borderColor: 'rgb(255, 99, 132)',
+      backgroundColor: 'rgba(255, 99, 132, 0.3)',
+      tension: 0.4,
+    },
+  ],
+};
+const areaChartOptions = {
+  responsive: true,
+  plugins: {
+    legend: {
+      position: 'bottom', // 범례를 하단으로
+    },
+  },
+  scales: {
+    y: {
+      min: 0, // y축 최소값을 0으로
+      stacked: true, // 5. y축을 누적으로 쌓습니다.
+    },
+  },
+};
+// --- 차트 데이터 끝 ---
+
+
+// --- 테이블 데이터 (기존 '전체' 테이블 데이터) ---
+const detailTableData = [
+  { date: '2024-11-04', energy: '전기', region: '서울', consumption: '1,603 KWh', cost: '212,462원', efficiency: '양호', trend: '상승' },
+  { date: '2024-11-05', energy: '태양열', region: '서울', consumption: '1,205 KWh', cost: '121,394원', efficiency: '나쁨', trend: '유지' },
+  { date: '2024-11-06', energy: '태양열', region: '대구', consumption: '2,034 KWh', cost: '268,695원', efficiency: '보통', trend: '유지' },
+  { date: '2024-11-07', energy: '전기', region: '서울', consumption: '1,837 KWh', cost: '214,160원', efficiency: '나쁨', trend: '유지' },
+  { date: '2024-11-08', energy: '전기', region: '부산', consumption: '2,460 KWh', cost: '335,978원', efficiency: '보통', trend: '상승' },
+  { date: '2024-11-09', energy: '태양열', region: '서울', consumption: '1,625 KWh', cost: '184,269원', efficiency: '우수', trend: '상승' },
+  { date: '2024-11-10', energy: '전기', region: '부산', consumption: '2,238 KWh', cost: '333,607원', efficiency: '보통', trend: '하락' },
+];
+
+function GasEmission() {
+  
+  // 날짜 범위 제한 로직 (기존과 동일)
+  const minMonth = "2020-01";
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const maxMonth = `${yyyy}-${mm}`;
+
+  // 2. [수정] selectedRegion의 기본값을 <option>의 첫 번째 값과 일치시킵니다.
+  const [selectedRegion, setSelectedRegion] = useState('서울특별시');
+  
+  const handleRegionChange = (event) => {
+    setSelectedRegion(event.target.value);
+  };
+
+  // 3. [수정] 'renderTableContent' 함수를 완성합니다.
+  const renderTableContent = () => {
+    // 3-1. '전체'가 선택되었거나, 해당 지역의 '구' 데이터가 없으면
+    //      기존의 상세 테이블을 보여줍니다.
+    //      (현재 '전체' 옵션이 없으므로, regionDistrictData에 없는 지역 선택 시)
+    if (!regionDistrictData[selectedRegion]) {
+      return (
+        <table className="stats-table">
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>에너지원</th>
+              <th>지역</th>
+              <th>총 소비량(KWh)</th>
+              <th>비용(원)</th>
+              <th>효율성 등급</th>
+              <th>추세</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detailTableData.map((row) => (
+              <tr key={row.date}>
+                <td>{row.date}</td>
+                <td>{row.energy}</td>
+                <td>{row.region}</td>
+                <td>{row.consumption}</td>
+                <td>{row.cost}</td>
+                <td>{row.efficiency}</td>
+                <td>{row.trend}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
+
+    // 3-2. '서울특별시', '부산광역시' 등 특정 지역이 선택되면
+    //      '구'별 테이블을 보여줍니다.
+    return (
+      <table className="stats-table">
+        <thead>
+          <tr>
+            <th>지역 (구)</th>
+            <th>총 소비량(KWh)</th>
+            <th>비용(원)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* 3-3. 선택된 지역(selectedRegion)의 데이터를 맵핑합니다. */}
+          {regionDistrictData[selectedRegion].map((row) => (
+            <tr key={row.gu}>
+              <td>{row.gu}</td>
+              <td>{row.consumption}</td>
+              <td>{row.cost}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+  // --- ▲▲▲ 테이블 로직 완료 ▲▲▲ ---
+
+  return (
+    <div className="stats-sidebar-layout">
+      
+      {/* 9. 왼쪽 사이드바 */}
+      <aside className="stats-sidebar">
+        <div className="sidebar-section">
+          <h4>날짜 범위 선택</h4>
+          <input
+            type="month"
+            className="stats-input"
+            min={minMonth}
+            max={maxMonth}
+            defaultValue={maxMonth}
+          />
+        </div>
+        
+        <div className="sidebar-section">
+          <h4>데이터 필터</h4>
+          <label>에너지원</label>
+          <select className="stats-input">
+            <option>전체</option>
+            <option>전기에너지(kWh)</option>
+            <option>가스에너지(kWh)</option>
+          </select>
+          <label>지역</label>
+          {/* 4. [수정] select 태그에 state를 연결합니다. */}
+          <select 
+            className="stats-input"
+            value={selectedRegion}
+            onChange={handleRegionChange}
+          >
+            {/* <option>전체</option> 
+              (참고: '전체' 옵션을 추가하고 싶다면,
+              renderTableContent의 if 조건을 if (selectedRegion === '전체') 로 변경하세요.)
+            */}
+            <option>서울특별시</option>
+            <option>부산광역시</option>
+            <option>대구광역시</option>
+            <option>인천광역시</option>
+            <option>광주광역시</option>
+            <option>대전광역시</option>
+            <option>울산광역시</option>
+            <option>세종특별자치시</option>
+            <option>경기도</option>
+            <option>충청북도</option>
+            <option>충청남도</option>
+            <option>전라남도</option>
+            <option>경상북도</option>
+            <option>경상남도</option>
+            <option>제주특별자치도</option>
+            <option>강원특별자치도</option>
+            <option>전북특별자치도</option>
+          </select>
+        </div>
+
+        <div className="sidebar-section">
+          <h4>고급 분석 옵션</h4>
+          {/* ... (기존과 동일) ... */}
+          <label>측정항목 비교</label>
+          <select className="stats-input">
+            <option>총 소비량</option>
+            <option>평균 소비량</option>
+          </select>
+          <label>집계 유형</label>
+          <select className="stats-input">
+            <option>월별 합계</option>
+            <option>주별 합계</option>
+          </select>
+          <button className="stats-button-primary">조회</button>
+        </div>
+      </aside>
+
+      {/* 10. 오른쪽 메인 콘텐츠 */}
+      <main className="main-content">
+        <h2>고급 소비 데이터 분석</h2>
+        
+        <div className="stats-tabs-inline">
+          {/* ... (기존과 동일) ... */}
+          <button className="tab-button-inline active">월별</button>
+          <button className="tab-button-inline">주별</button>
+          <button className="tab-button-inline">연간</button>
+        </div>
+
+        {/* 11. 차트 섹션 */}
+        <div className="chart-section">
+          {/* ... (기존과 동일) ... */}
+          <h3>월별 에너지 소비 추세</h3>
+          <p>지난 12개월간의 에너지 소비량 변화를 보여줍니다.</p>
+          <div className="chart-container">
+            <Line data={areaChartData} options={areaChartOptions} />
+          </div>
+        </div>
+
+        {/* 13. 테이블 섹션 */}
+        <div className="table-section">
+          {/* 5. [수정] 테이블 제목을 동적으로 변경합니다. */}
+          <h3>
+            {selectedRegion === '전체' ? '상세 에너지 소비 데이터' : `${selectedRegion} 구별 상세 데이터`}
+          </h3>
+          <p>선택된 필터에 따른 상세 에너지 소비 내역입니다.</p>
+          <div className="stats-table-container">
+            {/* 6. [수정] 조건부 렌더링 함수를 호출합니다. */}
+            {renderTableContent()}
+          </div>
+        </div>
+        
+      </main>
+    </div>
+  );
+}
+
+export default GasEmission;

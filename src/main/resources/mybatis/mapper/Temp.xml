@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "//mybatis.org/DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.future.my.dao.ITempDAO">
+	
+	<select id="getCityTemp" resultType="com.future.my.vo.TempVO" parameterType="com.future.my.vo.TempVO">
+		SELECT a.CITY_ID,
+			   b.CITY_NAME,
+			   a.YEAR_MONTH,
+			   a.temp
+	    FROM temp a, CITY b
+		WHERE a.CITY_ID = b.CITY_ID
+		AND  a.CITY_ID = #{cityId}
+	</select>
+
+	<select id="getCountryTemp" resultType="com.future.my.vo.TempVO">
+		SELECT a.CITY_ID,
+			   b.CITY_NAME,
+			   a.YEAR_MONTH,
+			   a.temp
+	    FROM temp a, CITY b
+		WHERE a.CITY_ID = b.CITY_ID
+		AND  a.CITY_ID = 0
+	</select>
+	
+</mapper>

@@ -1,0 +1,716 @@
+// src/components/MapKorea.jsx
+// 대한민국 코로플레스 지도 — 시/도 → 시·군·구 드릴다운 + 에너지 히트컬러(전기/가스 토글)
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  GeoJSON,
+  Pane,
+  useMap,
+  useMapEvent,
+} from "react-leaflet";
+import L from "leaflet";
+import centerOfMass from "@turf/center-of-mass";
+import "leaflet/dist/leaflet.css";
+import "./MapKorea.css";
+
+/* ───────── 키/유틸 ───────── */
+const SIDO_CODE_KEYS = ["CTPRVN_CD", "CTPRV_CD", "CTP_CD", "SIDO_CD", "SIG_CD"];
+const SIDO_NAME_KEYS = ["CTP_KOR_NM", "SIDO_NM", "CTP_ENG_NM", "CTP_NM"];
+const SGG_CODE_KEYS = ["SIG_CD", "SGG_CD", "ADM_DR_CD"];
+const SGG_NAME_KEYS = ["SIG_KOR_NM", "SGG_NM", "ADM_DR_NM", "SIG_NM"];
+const PARENT_KEYS = ["CTPRVN_CD", "UPPER_CD", "SIDO_CD"];
+
+const pick = (o, keys) => {
+  for (const k of keys) {
+    if (o && o[k] != null) return o[k];
+  }
+};
+
+/* ───────── 데이터 코드 정규화 ───────── */
+// 시군구 코드: 그냥 5자리만 맞춰서 사용
+const normalizeSggCodeFromData = (countyId) => {
+  if (countyId == null) return null;
+  return String(countyId).padStart(5, "0").slice(0, 5); // 예: 51110
+};
+
+/* ───────── 뷰포트/클램프 ───────── */
+const KOREA_BOUNDS = [
+  [32.5, 124.0],
+  [39.6, 132.5],
+];
+
+function ClampToKorea() {
+  const map = useMap();
+  useEffect(() => {
+    map.options.inertia = false;
+  }, [map]);
+  const clamp = () => {
+    if (!map.getBounds().intersects(KOREA_BOUNDS)) {
+      map.panInsideBounds(KOREA_BOUNDS, { animate: false });
+    }
+  };
+  useMapEvent("move", clamp);
+  useMapEvent("zoom", clamp);
+  useMapEvent("moveend", clamp);
+  return null;
+}
+
+function useFitBounds(geojsonRef, deps = []) {
+  const map = useMap();
+  useEffect(() => {
+    const layer = geojsonRef.current;
+    if (!layer) return;
+    try {
+      const b = layer.getBounds();
+      if (b && b.isValid()) {
+        const s = Math.max(b.getSouth(), KOREA_BOUNDS[0][0]);
+        const w = Math.max(b.getWest(), KOREA_BOUNDS[0][1]);
+        const n = Math.min(b.getNorth(), KOREA_BOUNDS[1][0]);
+        const e = Math.min(b.getEast(), KOREA_BOUNDS[1][1]);
+        map.fitBounds(
+          [
+            [s, w],
+            [n, e],
+          ],
+          { padding: [24, 24], paddingBottomRight: [24, 80] }
+        );
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
+function FitToLayer({ targetRef, deps }) {
+  useFitBounds(targetRef, deps);
+  return null;
+}
+
+/* ───────── 마스크 ───────── */
+const WORLD_RING = [
+  [-180, -90],
+  [-180, 90],
+  [180, 90],
+  [180, -90],
+  [-180, -90],
+];
+
+const ringsFromGeom = (g) =>
+  !g
+    ? []
+    : g.type === "Polygon"
+    ? g.coordinates
+    : g.type === "MultiPolygon"
+    ? g.coordinates.flat()
+    : [];
+
+const makeMaskFromSidoFC = (fc) => {
+  if (!fc?.features) return null;
+  const holes = [];
+  for (const f of fc.features) holes.push(...ringsFromGeom(f.geometry));
+  return {
+    type: "Feature",
+    properties: { kind: "mask-korea" },
+    geometry: { type: "Polygon", coordinates: [WORLD_RING, ...holes] },
+  };
+};
+
+const makeMaskFromOneSido = (f) => {
+  if (!f?.geometry) return null;
+  const holes = ringsFromGeom(f.geometry);
+  return {
+    type: "Feature",
+    properties: { kind: "mask-sido" },
+    geometry: { type: "Polygon", coordinates: [WORLD_RING, ...holes] },
+  };
+};
+
+/* ───────── 시/도 이름(정규화) ───────── */
+const SIDO_NAME_FIX = {
+  "11": "서울특별시",
+  "26": "부산광역시",
+  "27": "대구광역시",
+  "28": "인천광역시",
+  "29": "광주광역시",
+  "30": "대전광역시",
+  "31": "울산광역시",
+  "36": "세종특별자치시",
+  "41": "경기도",
+  "42": "강원특별자치도", // 옛 코드 대비
+  "43": "충청북도",
+  "44": "충청남도",
+  "45": "전북특별자치도", // 옛 코드 대비
+  "46": "전라남도",
+  "47": "경상북도",
+  "48": "경상남도",
+  "50": "제주특별자치도",
+  "51": "강원특별자치도",
+  "52": "전북특별자치도",
+};
+
+const normalizeSidoName = (feature) => {
+  const p = feature?.properties || {};
+  const code = String(pick(p, SIDO_CODE_KEYS) || "");
+  return SIDO_NAME_FIX[code] || pick(p, SIDO_NAME_KEYS) || "미상 시/도";
+};
+
+/* ───────── 시/도 라벨 중심+오프셋 ───────── */
+const SIDO_MANUAL_CENTERS = {
+  "11": [37.5665, 126.978],
+  "26": [35.1796, 129.0756],
+  "27": [35.8714, 128.6014],
+  "28": [37.4563, 126.7052],
+  "29": [35.1595, 126.8526],
+  "30": [36.3504, 127.3845],
+  "31": [35.5384, 129.3114],
+  "36": [36.48, 127.289],
+  "41": [37.4138, 127.5183],
+  "42": [37.8228, 128.1555], // 옛 강원 코드
+  "43": [36.6357, 127.4917],
+  "44": [36.5184, 126.8],
+  "45": [35.817, 127.111], // 옛 전북 코드
+  "46": [35.12, 126.9],
+  "47": [36.4919, 128.8889],
+  "48": [35.23, 128.25],
+  "50": [33.4996, 126.5312],
+  "51": [37.8228, 128.1555], // 강원특별자치도(신 코드)
+  "52": [35.817, 127.111], // 전북특별자치도(신 코드)
+};
+
+const SIDO_OFFSETS = {
+  "11": [0.08, -0.1],
+  "28": [0.04, -0.08],
+  "36": [0.02, 0.08],
+  "30": [-0.02, 0.02],
+  "41": [0.02, -0.06],
+  "43": [0.0, 0.0],
+  "44": [0.02, 0.1],
+  "45": [0.02, 0.12],
+  "46": [0.02, 0.06],
+  "47": [0.0, 0.0],
+  "48": [0.05, -0.1],
+  "26": [0.0, -0.04],
+  "27": [0.02, -0.02],
+  "31": [0.0, 0.06],
+  "42": [0.0, 0.0],
+  "50": [0.0, 0.0],
+  "51": [0.0, 0.0],
+  "52": [0.0, 0.0],
+};
+
+const OFFSET_VERSION = Object.entries(SIDO_OFFSETS)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([k, v]) => `${k}:${v[0].toFixed(3)},${v[1].toFixed(3)}`)
+  .join("|");
+
+const CENTER_VERSION = Object.entries(SIDO_MANUAL_CENTERS)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([k, v]) => `${k}:${v[0].toFixed(4)},${v[1].toFixed(4)}`)
+  .join("|");
+
+function calcCenterLatLng(feature) {
+  const code = String(pick(feature.properties, SIDO_CODE_KEYS) || "");
+  if (SIDO_MANUAL_CENTERS[code]) {
+    const [lat, lng] = SIDO_MANUAL_CENTERS[code];
+    return [lat, lng];
+  }
+  try {
+    const pt = centerOfMass(feature);
+    const [lng, lat] = pt.geometry.coordinates;
+    return [lat, lng];
+  } catch {
+    return null;
+  }
+}
+
+/* ───────── 에너지 히트컬러 (버킷 방식: 파스텔 블루 / 파스텔 오렌지) ───────── */
+
+const NO_DATA_COLOR = "#e0e0e0";
+
+// ⚡ 전기: 파스텔 하늘색 → 파스텔 블루 (5단계)
+const ELECTRIC_BUCKETS = [
+  "#f3f8ff", // 하위 20%
+  "#d9e7ff", // 20~40%
+  "#bed4ff", // 40~60%
+  "#9cbcff", // 60~80%
+  "#7699ff", // 상위 20%
+];
+
+// 🔥 가스: 크림 → 살구 → 오렌지 (5단계)
+const GAS_BUCKETS = [
+  "#fff7ec", // 하위 20%
+  "#ffe3c4", // 20~40%
+  "#ffcd9b", // 40~60%
+  "#ffb373", // 60~80%
+  "#ff9243", // 상위 20%
+];
+
+/** 값 배열에서 분위수(quantile) 위치의 값을 구하는 헬퍼 */
+const getQuantile = (sortedVals, q) => {
+  if (!sortedVals.length) return 0;
+  const pos = (sortedVals.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sortedVals[base + 1] !== undefined) {
+    return sortedVals[base] + (sortedVals[base + 1] - sortedVals[base]) * rest;
+  }
+  return sortedVals[base];
+};
+
+/**
+ * 버킷 기반 색 결정
+ * value: 현재 값
+ * values: 같은 레벨(시도 or 시군구)의 모든 값 배열
+ * type: 'electric' | 'gas'
+ */
+const getBucketColor = (value, values, type) => {
+  if (value == null || isNaN(value) || value <= 0) return NO_DATA_COLOR;
+  if (!values || !values.length) return NO_DATA_COLOR;
+
+  const palette = type === "gas" ? GAS_BUCKETS : ELECTRIC_BUCKETS;
+
+  // 값들 정렬
+  const sorted = [...values].filter((v) => v > 0).sort((a, b) => a - b);
+  if (!sorted.length) return NO_DATA_COLOR;
+
+  // 분위수 기준 값들 (20%, 40%, 60%, 80%)
+  const q20 = getQuantile(sorted, 0.2);
+  const q40 = getQuantile(sorted, 0.4);
+  const q60 = getQuantile(sorted, 0.6);
+  const q80 = getQuantile(sorted, 0.8);
+
+  // 현재 값이 어느 구간에 속하는지에 따라 색 선택
+  if (value <= q20) return palette[0];
+  if (value <= q40) return palette[1];
+  if (value <= q60) return palette[2];
+  if (value <= q80) return palette[3];
+  return palette[4]; // 상위 20%
+};
+
+const ymToLabel = (ym) => {
+  const s = String(ym || "");
+  if (s.length !== 6) return s || "—";
+  return `${s.slice(0, 4)}년 ${s.slice(4)}월`;
+};
+
+/* ───────── 메인 컴포넌트 ───────── */
+export default function MapKorea({
+  onRegionSelect,
+  allEnergyData, // [{yearMonth, cityId, countyId, useElect, useGas}, ...] or {items:[...]}
+  yearMonth = "202506",
+  energyType = "electric",          // 🔗 부모에서 내려줌
+  onEnergyTypeChange,               // 🔗 전기/가스 버튼 클릭 콜백
+}) {
+  const [level, setLevel] = useState("sido"); // 'sido' | 'sgg'
+  const [selectedSido, setSelectedSido] = useState(null);
+  const [warn, setWarn] = useState("");
+
+  const [sidoFC, setSidoFC] = useState(null); // 시/도 FC
+  const [sggAll, setSggAll] = useState(null); // 전국 SGG FC
+  const [sggFC, setSggFC] = useState(null); // 선택 시/도 SGG FC
+
+  const [koreaMask, setKoreaMask] = useState(null);
+  const [focusMask, setFocusMask] = useState(null);
+
+  const geojsonRef = useRef(null);
+
+  /* 데이터 로드 (public/korea) */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r1 = await fetch("/korea/SIDO_MAP_2022.json");
+        const sido = await r1.json();
+        setSidoFC(sido);
+        setKoreaMask(makeMaskFromSidoFC(sido));
+      } catch {
+        setWarn("❗ /korea/SIDO_MAP_2022.json 을 불러오지 못했습니다.");
+      }
+      try {
+        const r2 = await fetch("/korea/sgg.json");
+        const sgg = await r2.json();
+        setSggAll(sgg);
+      } catch {
+        setWarn(
+          (w) =>
+            (w ? w + " / " : "") + "❗ /korea/sgg.json 을 불러오지 못했습니다."
+        );
+      }
+    })();
+  }, []);
+
+  /* 시/도 클릭 → 해당 시/도의 SGG 필터 */
+  useEffect(() => {
+    if (level !== "sgg") return;
+    const code = selectedSido?.code;
+    if (!code) {
+      setSggFC(null);
+      setFocusMask(null);
+      return;
+    }
+
+    const sidoFeat =
+      sidoFC?.features?.find(
+        (ft) => String(pick(ft.properties, SIDO_CODE_KEYS)) === String(code)
+      ) || null;
+    setFocusMask(sidoFeat ? makeMaskFromOneSido(sidoFeat) : null);
+
+    if (sggAll?.features) {
+      const feats = sggAll.features.filter((ft) => {
+        const p = ft.properties || {};
+        let parent = pick(p, PARENT_KEYS);
+        if (parent == null) {
+          const sig = pick(p, SGG_CODE_KEYS);
+          if (sig) parent = String(sig).slice(0, 2);
+        }
+        return String(parent) === String(code);
+      });
+      setSggFC(
+        feats.length ? { type: "FeatureCollection", features: feats } : null
+      );
+    } else {
+      setSggFC(null);
+    }
+  }, [level, selectedSido, sggAll, sidoFC]);
+
+  /* 현재 FC 선택 */
+  const currentFC = useMemo(
+    () => (level === "sido" ? sidoFC : sggFC),
+    [level, sidoFC, sggFC]
+  );
+
+  /* 시/도 라벨 좌표 사전 계산(+오프셋) */
+  const sidoLabelCenterByCode = useMemo(() => {
+    if (!sidoFC?.features) return {};
+    const map = {};
+    for (const f of sidoFC.features) {
+      const code = String(pick(f.properties, SIDO_CODE_KEYS) || "");
+      let ll = calcCenterLatLng(f) || [0, 0];
+      const ofs = SIDO_OFFSETS[code];
+      if (ofs) ll = [ll[0] + ofs[0], ll[1] + ofs[1]];
+      map[code] = ll;
+    }
+    return map;
+  }, [sidoFC, CENTER_VERSION, OFFSET_VERSION]);
+
+  /* ───────── 에너지 데이터 전처리 ───────── */
+  const rawData = Array.isArray(allEnergyData)
+    ? allEnergyData
+    : allEnergyData?.items || [];
+
+  // 해당 월만 필터
+  const filtered = useMemo(
+    () => rawData.filter((d) => String(d?.yearMonth) === String(yearMonth)),
+    [rawData, yearMonth]
+  );
+
+  // 1) 시군구 코드 → 값 합계 (countyId 기준, 5자리로 정규화)
+  const sggValueByCode = useMemo(() => {
+    const m = {};
+    for (const d of filtered) {
+      const code = normalizeSggCodeFromData(d?.countyId);
+      if (!code) continue;
+      const val =
+        energyType === "gas" ? Number(d.useGas) : Number(d.useElect);
+      if (!isNaN(val) && val > 0) {
+        m[code] = (m[code] ?? 0) + val;
+      }
+    }
+    return m;
+  }, [filtered, energyType]);
+
+  // 2) 시도 코드별 값 합계 = 시군구 값들을 앞 2자리로 묶어서 합산
+  const sidoValueByCode = useMemo(() => {
+    const m = {};
+    Object.entries(sggValueByCode).forEach(([sggCode, val]) => {
+      if (!val || val <= 0) return;
+      const sidoCode = String(sggCode).slice(0, 2); // 11, 26, 51, 52 ...
+      m[sidoCode] = (m[sidoCode] ?? 0) + val;
+    });
+    return m;
+  }, [sggValueByCode]);
+
+  // 버킷 색 계산용 값 배열 (시도 또는 시군구)
+  const baseValues = useMemo(() => {
+    const baseMap = level === "sido" ? sidoValueByCode : sggValueByCode;
+    return Object.values(baseMap).filter((v) => v > 0);
+  }, [level, sidoValueByCode, sggValueByCode]);
+
+  /* 디버그 로그 */
+  useEffect(() => {
+    console.log("===== [MapKorea] DEBUG =====");
+    console.log(
+      "yearMonth:",
+      yearMonth,
+      "energyType:",
+      energyType,
+      "level:",
+      level
+    );
+    console.log("rawData length:", rawData.length);
+    console.log("filtered length:", filtered.length);
+    console.log("sidoValue keys:", Object.keys(sidoValueByCode));
+    console.log("sggValue keys length:", Object.keys(sggValueByCode).length);
+  }, [
+    rawData,
+    filtered,
+    sidoValueByCode,
+    sggValueByCode,
+    energyType,
+    level,
+    yearMonth,
+  ]);
+
+  /* 스타일 (히트컬러) */
+  const styleFn = (feature) => {
+    if (level === "sido") {
+      const code2 = String(pick(feature.properties, SIDO_CODE_KEYS) || ""); // 예: "51"
+      const val = sidoValueByCode[code2];
+      return {
+        weight: 1,
+        color: "#ffffff",
+        fillOpacity: 0.92,
+        fillColor: getBucketColor(val, baseValues, energyType),
+      };
+    }
+    // SGG
+    const code5 = String(pick(feature.properties, SGG_CODE_KEYS) || "");
+    const val = sggValueByCode[code5];
+    return {
+      weight: 1,
+      color: "#ffffff",
+      fillOpacity: 0.92,
+      fillColor: getBucketColor(val, baseValues, energyType),
+    };
+  };
+
+  /* SGG 전체명(시/도 + 시군구) */
+  const sggFullName = (sggFeature) => {
+    const sggName =
+      pick(sggFeature?.properties || {}, SGG_NAME_KEYS) || "미상 시군구";
+    const sidoName = selectedSido?.name || "미상 시/도";
+    return `${sidoName} ${String(sggName).replace(/<br\/>/g, " ")}`;
+  };
+
+  /* 라벨/팝업/이벤트 */
+  const onEachFeature = (feature, layer) => {
+    if (level === "sido") {
+      const code = String(pick(feature.properties, SIDO_CODE_KEYS) || "");
+      const name = normalizeSidoName(feature);
+      const ll = sidoLabelCenterByCode[code];
+
+      if (ll) {
+        const tip = L.tooltip({
+          permanent: true,
+          direction: "center",
+          className: "area-label",
+        })
+          .setContent(name)
+          .setLatLng(ll);
+        layer.bindTooltip(tip);
+        layer.on("add", () => {
+          try {
+            layer.openTooltip();
+          } catch {}
+        });
+      }
+
+      layer.on("mouseover", (e) => {
+        layer.setStyle({ weight: 2, color: "#ffffff" });
+        layer
+          .bindPopup(`${name}<br/>${ymToLabel(yearMonth)}`)
+          .openPopup(e.latlng);
+      });
+      layer.on("mouseout", () => {
+        layer.setStyle({ weight: 1, color: "#ffffff" });
+        layer.closePopup();
+      });
+      layer.on("click", (e) => {
+        setSelectedSido({ code, name });
+        setLevel("sgg");
+        layer
+          .bindPopup(`${name}<br/>${ymToLabel(yearMonth)}`)
+          .openPopup(e.latlng);
+        onRegionSelect?.({ cityId: Number(code), cityName: name });
+      });
+      layer.on("add", () => {
+        try {
+          layer.getElement()?.classList?.add("cursor-pointer");
+        } catch {}
+      });
+    } else {
+      const name = sggFullName(feature);
+      try {
+        const pt = centerOfMass(feature);
+        const [lng, lat] = pt.geometry.coordinates;
+        const tip = L.tooltip({
+          permanent: true,
+          direction: "center",
+          className: "area-label sgg",
+        })
+          .setContent(name.replace((selectedSido?.name || "") + " ", ""))
+          .setLatLng([lat, lng]);
+        layer.bindTooltip(tip);
+        layer.on("add", () => {
+          try {
+            layer.openTooltip();
+          } catch {}
+        });
+      } catch {}
+
+      layer.on("mouseover", (e) => {
+        layer.setStyle({ weight: 2, color: "#ffffff" });
+        layer
+          .bindPopup(`${name}<br/>${ymToLabel(yearMonth)}`)
+          .openPopup(e.latlng);
+      });
+      layer.on("mouseout", () => {
+        layer.setStyle({ weight: 1, color: "#ffffff" });
+        layer.closePopup();
+      });
+      layer.on("click", (e) => {
+        layer
+          .bindPopup(`${name}<br/>${ymToLabel(yearMonth)}`)
+          .openPopup(e.latlng);
+        const sigCd = String(pick(feature.properties, SGG_CODE_KEYS) || "");
+        const sigName = pick(feature.properties, SGG_NAME_KEYS);
+        onRegionSelect?.({
+          cityId: Number(selectedSido?.code),
+          countyId: Number(sigCd),
+          cityName: selectedSido?.name,
+          countyName: sigName,
+        });
+      });
+    }
+  };
+
+  const resetToSido = () => {
+    setLevel("sido");
+    setSelectedSido(null);
+    setSggFC(null);
+    setFocusMask(null);
+    onRegionSelect?.(null); // 🔙 상위(selectedRegion)도 전국으로
+  };
+
+  return (
+    <div className="map-host">
+      {/* 상단 툴바 */}
+      <div className="map-toolbar">
+        <div className="month-label">📅 {ymToLabel(yearMonth)} 기준</div>
+        <div className="map-energy-buttons">
+          <button
+            className={energyType === "electric" ? "active-electric" : ""}
+            onClick={() => onEnergyTypeChange?.("electric")}
+            title="전기 사용량 보기"
+          >
+            ⚡ 전기
+          </button>
+          <button
+            className={energyType === "gas" ? "active-gas" : ""}
+            onClick={() => onEnergyTypeChange?.("gas")}
+            title="가스 사용량 보기"
+          >
+            🔥 가스
+          </button>
+        </div>
+      </div>
+
+      {warn && <div className="warn-box">{warn}</div>}
+
+      {level === "sgg" && (
+        <button className="btn-back" onClick={resetToSido}>
+          ◀ 시/도로 돌아가기
+        </button>
+      )}
+
+      <MapContainer
+        key={
+          level === "sido"
+            ? `map-sido-${CENTER_VERSION}-${OFFSET_VERSION}`
+            : `map-sgg-${selectedSido?.code || ""}`
+        }
+        bounds={KOREA_BOUNDS}
+        minZoom={6}
+        maxZoom={13}
+        maxBounds={KOREA_BOUNDS}
+        maxBoundsViscosity={1.0}
+        inertia={false}
+        worldCopyJump={false}
+        zoomControl={false}
+        attributionControl={false}
+        zoomSnap={0.25}
+        zoomDelta={0.25}
+        wheelPxPerZoomLevel={220}
+        wheelDebounceTime={40}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <Pane name="mask" style={{ zIndex: 400 }} />
+        <Pane name="gaps" style={{ zIndex: 405 }} />
+        <Pane name="polygons" style={{ zIndex: 410 }} />
+
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          noWrap
+        />
+
+        {(level === "sgg" ? focusMask : koreaMask) && (
+          <GeoJSON
+            pane="mask"
+            data={level === "sgg" ? focusMask : koreaMask}
+            style={{
+              fillColor: "#ffffffff",
+              fillOpacity: 0.6,
+              color: "#0b1020",
+              weight: 0,
+            }}
+            interactive={false}
+          />
+        )}
+
+        {currentFC && (
+          <GeoJSON
+            pane="gaps"
+            data={currentFC}
+            style={{
+              fillOpacity: 0,
+              color: "#ebdfd8ff",
+              weight: level === "sido" ? 6 : 3,
+              lineJoin: "round",
+              lineCap: "round",
+            }}
+            interactive={false}
+          />
+        )}
+
+        {currentFC && (
+          <GeoJSON
+            key={
+              level === "sido"
+                ? `polygons-sido-${CENTER_VERSION}-${OFFSET_VERSION}`
+                : `polygons-sgg-${selectedSido?.code || ""}`
+            }
+            pane="polygons"
+            ref={geojsonRef}
+            data={currentFC}
+            style={styleFn}
+            onEachFeature={onEachFeature}
+          />
+        )}
+
+        <FitToLayer
+          targetRef={geojsonRef}
+          deps={[
+            level,
+            selectedSido?.code,
+            currentFC?.features?.length,
+            CENTER_VERSION,
+            OFFSET_VERSION,
+            energyType,
+            yearMonth,
+          ]}
+        />
+        <ClampToKorea />
+      </MapContainer>
+    </div>
+  );
+}

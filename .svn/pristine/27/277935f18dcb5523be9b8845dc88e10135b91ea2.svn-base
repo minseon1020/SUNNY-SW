@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "//mybatis.org/DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.future.my.dao.IPredictEnergyDAO">
+
+	<select id="getCountryPredictEnergy" resultType="com.future.my.vo.PredictEnergyVO">
+		SELECT 0                  AS CITY_ID,
+		       'National'        AS CITY_NAME,
+		       0                  AS COUNTY_ID,
+		       'National'        AS COUNTY_NAME,
+		       p.YEAR_MONTH,
+		       SUM(p.PRE_ELECT) AS PRE_ELECT,
+		       SUM(p.PRE_GAS)   AS PRE_GAS
+		FROM PREDICT_ENERGY_DATA p
+		GROUP BY p.YEAR_MONTH
+		ORDER BY p.YEAR_MONTH
+	</select>
+
+	<select id="getCityPredictEnergy" resultType="com.future.my.vo.PredictEnergyVO" parameterType="com.future.my.vo.PredictEnergyVO">
+		SELECT p.CITY_ID,
+		       c.CITY_NAME,
+		       p.COUNTY_ID,
+		       co.COUNTY_NAME,
+		       p.YEAR_MONTH,
+		       p.PRE_ELECT,
+		       p.PRE_GAS
+		FROM PREDICT_ENERGY_DATA p,
+		     CITY c,
+		     COUNTY co
+		WHERE p.CITY_ID = c.CITY_ID
+		  AND p.COUNTY_ID = co.COUNTY_ID
+		  AND p.CITY_ID = #{cityId}
+	</select>
+
+	<select id="getCountyPredictEnergy" resultType="com.future.my.vo.PredictEnergyVO" parameterType="com.future.my.vo.PredictEnergyVO">
+		SELECT p.CITY_ID,
+		       c.CITY_NAME,
+		       p.COUNTY_ID,
+		       co.COUNTY_NAME,
+		       p.YEAR_MONTH,
+		       p.PRE_ELECT,
+		       p.PRE_GAS
+		FROM PREDICT_ENERGY_DATA p,
+		     CITY c,
+		     COUNTY co
+		WHERE p.CITY_ID = c.CITY_ID
+		  AND p.COUNTY_ID = co.COUNTY_ID
+		  AND p.COUNTY_ID = #{countyId}
+	</select>
+
+</mapper>
+

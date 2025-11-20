@@ -1,0 +1,162 @@
+/* src/pages/GasEmission.module.css */
+
+/* 좌우 여백을 거의 없애고(2vw), 최대 1680px까지 유동 확장 */
+.wrap {
+  padding: 20px 2vw;
+}
+
+.container {
+  width: min(96vw, 1680px);
+  margin: 0 auto;
+}
+
+/* 헤더 */
+.header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.header p {
+  color: #666;
+  margin: 0 0 16px;
+}
+
+/* 좌측 카드 + 우측 지도 2열 (사이드 폭도 살짝 키움) */
+.layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.side {
+  min-width: 320px;
+}
+
+/* 왼쪽 필터 카드 */
+.filterCard {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+}
+
+.cardTitle {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.formRowInline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.label {
+  font-size: 13px;
+  color: #444;
+}
+
+/* 연도 셀렉트 더 큼직하게 */
+.selectBig {
+  height: 48px;
+  padding: 10px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 10px;
+  background: #fff;
+  outline: none;
+  color: #222;
+  font-size: 15px;
+}
+
+.input,
+.select {
+  height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+  outline: none;
+  color: #222;
+  font-size: 14px;
+}
+
+.input:focus,
+.select:focus,
+.selectBig:focus {
+  border-color: #151a2f;
+}
+
+.help {
+  font-size: 11px;
+  color: #8c8c8c;
+  margin-top: 4px;
+}
+
+.sep {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 10px 0 12px;
+}
+
+.btnPrimary {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid #3a3f55;
+  background: #151a2f;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 오른쪽 지도 카드 */
+.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cardHead h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.cardSub {
+  font-size: 12px;
+  color: #888;
+}
+
+/* 지도 패널: 높이는 JSX에서 720 지정 */
+.panel {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.checkLabel {
+  font-size: 13px;
+  color: #333;
+}

@@ -1,0 +1,138 @@
+import React, { useState } from "react";
+
+export default function EnergyFetch() {
+  const [cityId, setCityId] = useState("");
+  const [countyId, setCountyId] = useState("");
+  const [energy, setEnergy] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleFetch = () => {
+    if (!cityId && !countyId) {
+      alert("cityId 또는 countyId 중 하나 이상은 입력해주세요!");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // ✅ 파라미터를 조건부로 추가
+    let params = [];
+    if (cityId) params.push(`cityId=${cityId}`);
+    if (countyId) params.push(`countyId=${countyId}`);
+
+    const queryString = params.join("&");
+    const url = `/api/energy?${queryString}`;
+
+    console.log("요청 URL:", url);
+
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error("요청 실패");
+        return res.json();
+      })
+      .then((data) => {
+        console.log("서버 응답:", data);
+        setEnergy(data);
+      })
+      .catch((err) => {
+        console.error("에러:", err);
+        setError(err.message);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  return (
+    <div
+      style={{
+        padding: "30px",
+        background: "#fffbea",
+        borderRadius: "16px",
+        maxWidth: "600px",
+        margin: "40px auto",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+      }}
+    >
+      <h2 style={{ marginBottom: "20px", fontWeight: "700" }}>
+        ⚡ 에너지 데이터 요청 (cityId + countyId)
+      </h2>
+
+      {/* cityId 입력 */}
+      <div style={{ marginBottom: "15px" }}>
+        <label>🏙️ cityId: </label>
+        <input
+          type="text"
+          placeholder="예: 11"
+          value={cityId}
+          onChange={(e) => setCityId(e.target.value)}
+          style={{
+            padding: "8px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            width: "150px",
+          }}
+        />
+      </div>
+
+      {/* countyId 입력 */}
+      <div style={{ marginBottom: "25px" }}>
+        <label>📍 countyId: </label>
+        <input
+          type="text"
+          placeholder="예: 101"
+          value={countyId}
+          onChange={(e) => setCountyId(e.target.value)}
+          style={{
+            padding: "8px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            width: "150px",
+          }}
+        />
+      </div>
+
+      <button
+        onClick={handleFetch}
+        style={{
+          background: "#facc15",
+          padding: "10px 20px",
+          borderRadius: "8px",
+          border: "none",
+          cursor: "pointer",
+          fontWeight: "600",
+        }}
+      >
+        요청 보내기 🚀
+      </button>
+
+      {loading && <p>📡 데이터를 불러오는 중...</p>}
+      {error && <p style={{ color: "red" }}>❌ 에러: {error}</p>}
+
+      {energy && (
+        <div
+          style={{
+            marginTop: "25px",
+            background: "#fff",
+            padding: "20px",
+            borderRadius: "12px",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+          }}
+        >
+          <h3 style={{ marginBottom: "10px" }}>📊 서버 응답 데이터</h3>
+          <p>
+            <b>🏙️ cityId:</b> {energy.cityId}
+          </p>
+          <p>
+            <b>📍 countyId:</b> {energy.countyId}
+          </p>
+          <p>
+            <b>⚡ 전기 사용량:</b> {energy.electricUsage}
+          </p>
+          <p>
+            <b>🔥 가스 사용량:</b> {energy.gasUsage}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,44 @@
+.main-tabs {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.main-tabs button {
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+.main-tabs button.active {
+  background: #007bff;
+  color: #fff;
+  border-color: #007bff;
+}
+
+.sub-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sub-tabs button {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  background: #f9f9f9;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.sub-tabs button.active {
+  background: #0057ff;
+  color: #fff;
+  border-color: #0057ff;
+}

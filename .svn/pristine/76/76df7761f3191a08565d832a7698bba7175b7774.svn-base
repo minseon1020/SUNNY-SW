@@ -1,0 +1,136 @@
+/* Dashboard.css */
+/* 메인 대시보드 페이지 스타일 (병합본) */
+
+.dashboard {
+  padding: 30px 60px;
+  margin-top: 20px;
+  background-color: #fafbfc;
+}
+
+.dashboard h1 {
+  font-size: 28px;
+  margin-bottom: 10px;
+  color: #222;
+}
+
+.dashboard p {
+  color: #555;
+  margin-bottom: 26px;
+  line-height: 1.6;
+}
+
+/* 🧩 메인 4칸 레이아웃 */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: auto;     /* 높이 자동 조정 */
+  gap: 26px;
+}
+
+/* 🧱 카드 공통 스타일 */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.card h3 {
+  font-size: 17px;
+  margin-bottom: 10px;
+  color: #333;
+  font-weight: 700;
+}
+
+/* 🗺 지도 카드 */
+.card.map { height: 580px; }
+
+.card.map .leaflet-container {
+  flex: 1;
+  height: 500px !important;
+  width: 100% !important;
+  border-radius: 12px;
+}
+
+/* 📊 차트 카드 */
+.card.chart {
+  height: 580px;
+  display: flex;
+  flex-direction: column;
+}
+.card.chart canvas {
+  flex: 1;
+  width: 100% !important;
+  height: 400px !important;
+}
+
+/* 📦 차트 플레이스홀더(임시 자리 표시) */
+.chart-placeholder {
+  height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f5f7;
+  border-radius: 8px;
+  color: #999;
+  font-size: 16px;
+}
+
+/* 🎛 탭 버튼 */
+.main-tabs,
+.sub-tabs {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+button {
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: 1px solid #d0d0d0;
+  background: #f7f8fa;
+  color: #333;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13.5px;
+  transition: all 0.2s ease-in-out;
+}
+button:hover { background: #e7ecf4; }
+button.active {
+  background: #007bff;
+  color: #fff;
+  border-color: #007bff;
+}
+
+/* 지도 카드의 오른쪽 아래 저작권 표기 숨김 */
+.dashboard .card:nth-of-type(1) .leaflet-control-attribution {
+  display: none !important;
+}
+
+/* 🧭 반응형 */
+@media (max-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+  .card.map { height: 420px; }
+  .card.chart { height: 480px; }
+}
+/* 전기 활성화: 기존 파란색 유지 (안 써도 되지만 명시적으로) */
+.sub-tabs button.electric.active {
+  background: #007bff;
+  border-color: #007bff;
+  color: #fff;
+}
+
+/* 가스 활성화: 지도랑 맞게 주황색 */
+.sub-tabs button.gas.active {
+  background: #ff9243;   /* 지도 GAS 상위 색 */
+  border-color: #ff9243;
+  color: #fff;
+}

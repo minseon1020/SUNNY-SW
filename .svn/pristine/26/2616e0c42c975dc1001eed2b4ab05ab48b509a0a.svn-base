@@ -1,0 +1,181 @@
+import { useEffect, useRef } from "react";
+import Chart from "chart.js/auto";
+
+export default function ChartSection({
+  selectedRegion,
+  selectedRegionData,
+  nationalData,
+  sidoData,
+  energyType,
+  mainTab,
+}) {
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+
+  useEffect(() => {
+
+    if (!selectedRegionData || selectedRegionData.length === 0) return;
+
+    // === 기존 코드 유지 ===
+    const rawData = selectedRegionData.items || selectedRegionData;
+
+    const cleanData = rawData.filter((d) => {
+      const ym = Number(d.yearMonth);
+      return ym >= 202001 && ym <= 202506;
+    });
+
+    if (cleanData.length === 0) return;
+
+    // === 월 리스트 ===
+    const allMonths = [];
+    for (let y = 2020; y <= 2025; y++) {
+      for (let m = 1; m <= 12; m++) {
+        const ym = `${y}${String(m).padStart(2, "0")}`;
+        allMonths.push(ym);
+        if (ym === "202506") break;
+      }
+    }
+
+    const getVal = (d) =>
+      energyType === "electric" ? Number(d.useElect || 0) : Number(d.useGas || 0);
+
+    let labels = allMonths;
+    let values = [];
+    let compareValues = [];
+
+    // ==================================================
+    // 1) 메인 데이터 계산 (평균 X → 모두 합계 기준)
+    // ==================================================
+
+    // 🔵 전국 선택
+    if (!selectedRegion) {
+      const map = new Map();
+      (nationalData || []).forEach((d) => map.set(d.yearMonth, getVal(d)));
+      values = labels.map((ym) => map.get(ym) ?? 0);
+    }
+
+    // 🔵 시도 선택 (시군구 값 합산해서 “시도 전체 합계”)
+    else if (!selectedRegion.countyId) {
+      const countyMap = {};
+
+      cleanData.forEach((d) => {
+        if (!countyMap[d.countyId]) countyMap[d.countyId] = {};
+        countyMap[d.countyId][d.yearMonth] = getVal(d);
+      });
+
+      values = labels.map((ym) => {
+        let total = 0;
+        Object.values(countyMap).forEach((m) => {
+          total += m[ym] ?? 0;
+        });
+        return total;
+      });
+    }
+
+    // 🔵 시군구 선택 (단일 값)
+    else {
+      const map = new Map();
+      cleanData.forEach((d) => {
+        if (Number(d.countyId) === Number(selectedRegion.countyId)) {
+          map.set(d.yearMonth, getVal(d));
+        }
+      });
+      values = labels.map((ym) => map.get(ym) ?? 0);
+    }
+
+    // ==================================================
+    // 2) 비교선 계산 (전체 합계 기준)
+    // ==================================================
+
+    // 전국은 비교선 없음
+    if (!selectedRegion) {
+      compareValues = [];
+    }
+
+    // 시도 선택 → 비교선 = 전국 전체 합계
+    else if (!selectedRegion.countyId) {
+      const natMap = new Map();
+      (nationalData || []).forEach((d) => natMap.set(d.yearMonth, getVal(d)));
+      compareValues = labels.map((ym) => natMap.get(ym) ?? 0);
+    }
+
+    // 시군구 선택 → 비교선 = 해당 시도 전체 합계
+    else {
+      const sidoMap = new Map();
+      (sidoData || []).forEach((d) => sidoMap.set(d.yearMonth, getVal(d)));
+      compareValues = labels.map((ym) => sidoMap.get(ym) ?? 0);
+    }
+    // ==================================================
+    // 3) 차트 생성 (dual-axis 적용)
+    // ==================================================
+
+    if (chartInstance.current) chartInstance.current.destroy();
+    const ctx = chartRef.current.getContext("2d");
+
+    const datasets = [
+      {
+        label:
+          !selectedRegion
+            ? "전국 합계"
+            : selectedRegion.countyId
+            ? `${selectedRegion.countyName}`
+            : `${selectedRegion.cityName} 전체 합계`,
+        data: values,
+        borderColor: "#3b82f6",
+        backgroundColor: "#3b82f633",
+        yAxisID: "y1",
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2,
+        pointRadius: 2,
+      },
+    ];
+
+    if (compareValues.length > 0) {
+      datasets.push({
+        label:
+          !selectedRegion.countyId
+            ? "전국 합계"
+            : `${selectedRegion.cityName} 전체 합계`,
+        data: compareValues,
+        borderColor: "#ef4444",
+        backgroundColor: "#ef444433",
+        yAxisID: "y2",
+        fill: false,
+        tension: 0.3,
+        borderWidth: 2,
+        pointRadius: 2,
+      });
+    }
+
+    chartInstance.current = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y1: { type: "linear", position: "left" },
+          y2: {
+            type: "linear",
+            position: "right",
+            grid: { drawOnChartArea: false },
+          },
+        },
+      },
+    });
+  }, [
+    selectedRegion,
+    selectedRegionData,
+    nationalData,
+    sidoData,
+    energyType,
+    mainTab,
+  ]);
+
+  return (
+    <div style={{ width: "100%", height: "420px", paddingTop: "8px" }}>
+      <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
+}

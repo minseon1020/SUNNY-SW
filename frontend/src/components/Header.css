@@ -1,0 +1,249 @@
+/* Header.css — 병합본 */
+/* Google Fonts */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap");
+
+/* ============================== */
+/* 기본 타이포 & 배경 */
+/* ============================== */
+body {
+  font-family: "Poppins", "Noto Sans KR", sans-serif;
+  color: #555;               /* 본문 글자색 통일 */
+  line-height: 1.6;
+  background-color: #fafbfc; /* 밝은 대시보드 배경 */
+}
+
+/* ============================== */
+/* HEADER 영역 */
+/* ============================== */
+.header {
+  background-color: #fff;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 60px;
+  height: 85px;
+  position: relative;
+  z-index: 100;
+}
+
+/* 왼쪽 로고 */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* 로고 이미지 */
+.logo {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  margin-right: 8px;
+  transition: transform 0.25s ease;
+  filter: drop-shadow(0 3px 6px rgba(255, 183, 77, 0.25));
+}
+.logo:hover { transform: scale(1.08) rotate(5deg); }
+
+/* 사이트 타이틀 (NSE) */
+.site-info h2 {
+  font-size: 36px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.5px;
+  display: inline-block;
+  line-height: 1.1;
+  background: linear-gradient(90deg, #ff9100, #ffb300, #ffd54f, #ffb300);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 2px 6px rgba(255, 172, 0, 0.3);
+  background-size: 200% auto;
+  animation: shine 3.5s linear infinite;
+}
+@keyframes shine {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* 서브타이틀 */
+.site-info p {
+  font-size: 15px;
+  color: #7f7f7f;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  margin: 0;
+  margin-top: 2px;
+}
+
+/* ============================== */
+/* NAVIGATION 메뉴 */
+/* ============================== */
+.nav > ul {
+  display: flex;
+  list-style: none;
+  gap: 40px;
+  margin: 0;
+  padding: 0;
+}
+.nav li {
+  position: relative;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 상단 루트 메뉴(텍스트 + 밑줄 애니메이션) */
+.nav > ul > li.nav-item > .dropdown-title {
+  position: relative;
+  font-size: 18px;
+  font-weight: 700;
+  color: #666;
+  line-height: 1;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+.nav > ul > li.nav-item > .dropdown-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;  /* 밑줄과 글자 사이 여백 */
+  width: 0%;
+  height: 2px;
+  background-color: #ffb84d; /* 포인트 오렌지 */
+  transition: width 0.3s ease;
+}
+.nav > ul > li.nav-item > .dropdown-title:hover::after { width: 100%; }
+
+.nav a,
+.dropdown-title {
+  text-decoration: none;
+  color: #666;
+  transition: all 0.25s ease;
+}
+.nav a:hover,
+.dropdown-title:hover {
+  color: #ffb84d;
+  transform: translateY(-1px);
+}
+
+/* 메뉴 구분선 */
+.nav > ul > li.nav-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: -20px;
+  top: 6px;
+  width: 1px;
+  height: 18px;
+  background-color: #eee;
+}
+
+/* ============================== */
+/* DROPDOWN 메뉴 */
+/* ============================== */
+.dropdown-area {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  padding-top: 8px;
+  z-index: 99;
+}
+.dropdown-menu {
+  background-color: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(255, 167, 38, 0.15);
+  width: 200px;
+  animation: fadeIn 0.15s ease-in-out;
+}
+.dropdown-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+}
+.dropdown-menu li {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  transition: 0.2s;
+  border-bottom: 1px solid #f5f5f5;
+  font-weight: 400;
+  color: #666;
+}
+.dropdown-menu li:last-child { border-bottom: none; }
+.dropdown-menu a {
+  color: #666;
+  text-decoration: none;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-weight: 400;
+}
+.dropdown-menu li:hover {
+  background-color: #fff8e1;
+  color: #ff9800;
+  font-weight: 600;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================== */
+/* CONTENT (본문, 대시보드 영역) */
+/* ============================== */
+main, section, article, .content, .container {
+  color: #555;
+  font-weight: 400;
+}
+h1, h2, h3, h4, h5 {
+  color: #333;
+  font-weight: 600;
+}
+p, li, span { color: #555; }
+
+/* 대시보드 영역 */
+.dashboard {
+  padding: 40px 60px;
+  background-color: #f9fafb;
+}
+.dashboard h1, .dashboard h2 {
+  color: #333;
+  font-weight: 700;
+}
+.dashboard p {
+  color: #666;
+  font-weight: 400;
+}
+
+/* 카드 */
+.dashboard .card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.dashboard .card:hover {
+  box-shadow: 0 8px 22px rgba(0,0,0,0.06);
+  transform: translateY(-3px);
+}
+.dashboard .card h3 {
+  color: #444;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.dashboard .card p,
+.dashboard .card span {
+  color: #777;
+  font-weight: 400;
+}
+
+/* 부드러운 전환 효과 */
+.dashboard * {
+  transition: color 0.2s ease, background-color 0.2s ease;
+}

@@ -1,0 +1,219 @@
+/* App.css */
+/* 전체 레이아웃과 페이지 기본색, 폰트 지정 */
+
+/* ===== Reset ===== */
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;   /* 가로 스크롤 숨김 */
+  overflow-y: auto;     /* 세로 스크롤 허용 */
+}
+
+body {
+  font-family: "Noto Sans KR", sans-serif;
+  background-color: #f6f7fa; /* 연회색 배경 */
+  color: #222;
+}
+
+/* ===== App Layout ===== */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;       /* 화면 높이 꽉 채우기 */
+  position: relative;
+  overflow: visible;        /* !important 제거 */
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px 60px 40px 60px; /* 좌우 60px */
+  background-color: #f9f9fb;
+  position: relative;
+  overflow: visible;
+  z-index: 1;
+}
+
+/* ===== 공통 유틸 ===== */
+.warn-box {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background:#fff7e6;
+  border:1px solid #ffe58f;
+  border-radius:12px;
+  color:#6b4e00;
+  font-size: 12px;
+}
+
+/* =========================================================================
+   통계 페이지 레이아웃(사이드바 + 본문)
+   ========================================================================= */
+.stats-sidebar-layout {
+  display: flex;     /* 사이드바와 메인 콘텐츠를 가로로 배치 */
+  flex: 1;
+  gap: 20px;         /* 사이드바와 메인 콘텐츠 사이 간격 */
+  padding: 20px;     /* 회색 영역 패딩 */
+  background-color: #f4f7f6;
+}
+
+/* 1) 왼쪽 사이드바 */
+.stats-sidebar {
+  flex: 0 0 280px;   /* 고정 폭 */
+  background-color: #ffffff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-self: flex-start;  /* 스크롤 시 사이드바가 따라올라가지 않도록 */
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sidebar-section h4 {
+  margin: 0 0 5px 0;
+  color: #333;
+  border-bottom: 2px solid #f0f0f0;
+  padding-bottom: 8px;
+}
+.sidebar-section label {
+  font-size: 0.9rem;
+  color: #555;
+  font-weight: 500;
+  margin-top: 5px;
+}
+
+/* 2) 사이드바 입력/버튼 */
+.stats-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  box-sizing: border-box; /* 패딩 포함 */
+}
+
+.stats-button-primary {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  margin-top: 10px;
+}
+.stats-button-primary:hover { background-color: #0056b3; }
+
+/* 3) 본문 카드화 */
+.stats-sidebar-layout > .main-content {
+  flex: 1;                 /* 남은 공간 모두 차지 */
+  background-color: #ffffff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* 4) 인라인 탭 */
+.stats-tabs-inline {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #f0f0f0;
+}
+.tab-button-inline {
+  background: none;
+  border: none;
+  padding: 10px 15px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.tab-button-inline.active {
+  color: #007bff;
+  border-bottom: 2px solid #007bff;
+}
+
+/* 5) 차트/테이블 영역 */
+.chart-section,
+.table-section { margin-top: 20px; }
+
+.chart-section h3,
+.table-section h3 { margin-bottom: 5px; }
+
+.chart-section p,
+.table-section p {
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 15px;
+}
+
+.stats-table-container {
+  width: 100%;
+  overflow-x: auto;      /* 가로 스크롤 */
+}
+.stats-table {
+  /* width: 100%;  테이블 짤림 방지 위해 제거 */
+  min-width: 800px;      /* 최소 너비 */
+  border-collapse: collapse;
+}
+.stats-table th,
+.stats-table td {
+  padding: 12px 15px;
+  border: 1px solid #e0e0e0;
+  text-align: left;
+  font-size: 0.9rem;
+}
+.stats-table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+}
+.stats-table tbody tr:nth-child(even) { background-color: #fdfdfd; }
+
+/* =========================================================================
+   지도(Leaflet) 페이지 스타일
+   ========================================================================= */
+.page-wrap { min-height: 100vh; background: #0b1020; }
+.page-inner { max-width: 1180px; margin: 0 auto; padding: 16px; }
+.page-title { font-size: 24px; font-weight: 800; color: #fff; margin: 0 0 8px; }
+.map-shell {
+  position:relative; height:74vh; border-radius:16px; overflow:hidden;
+  box-shadow:0 4px 12px rgba(0,0,0,.35);
+}
+
+/* 버튼 */
+.btn-back {
+  position:absolute; right:12px; top:12px; z-index:1000;
+  padding:6px 10px; border-radius:10px; border:1px solid #3a3f55;
+  background:#151a2f; color:#fff;
+}
+
+/* 라벨/팝업 (가로 고정) */
+.leaflet-tooltip.area-label{
+  background:transparent; border:none; box-shadow:none; color:#fff; font-weight:800;
+  text-shadow:
+    -1px -1px 0 #0b1020, 1px -1px 0 #0b1020,
+    -1px  1px 0 #0b1020, 1px  1px 0 #0b1020,
+     0 0 3px rgba(0,0,0,.35);
+  pointer-events:none;
+  font-size:12px;
+  line-height:1.1;
+  letter-spacing:-0.3px;
+  text-align:center;
+  white-space:nowrap;
+  writing-mode:horizontal-tb;
+  max-width:none;
+}
+@media (min-width:1024px){
+  .leaflet-tooltip.area-label{ font-size:16px; }
+}
+
+.leaflet-popup-content{ margin:6px 8px; font-weight:700; }
+.leaflet-popup-content-wrapper{ background:rgba(20,24,40,.92); color:#fff; border-radius:8px; }
+.leaflet-popup-tip{ background:rgba(20,24,40,.92); }

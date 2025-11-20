@@ -1,0 +1,168 @@
+import { useEffect, useRef } from "react";
+import Chart from "chart.js/auto";
+
+export default function ChartSection({
+  selectedRegion,
+  selectedRegionData,
+  energyType,
+  mainTab,
+}) {
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+
+  useEffect(() => {
+    if (!selectedRegion || !selectedRegionData || selectedRegionData.length === 0) return;
+
+    // ✅ 데이터 구조 정리
+    const rawData = selectedRegionData.items || selectedRegionData;
+
+    // ✅ 1. 2020~2025.06 사이 데이터만 사용
+    const cleanData = rawData.filter((d) => {
+      const ym = Number(d.yearMonth);
+      return ym >= 202001 && ym <= 202506;
+    });
+    if (cleanData.length === 0) return;
+
+    // ✅ 2. 전체 월 리스트 생성
+    const allMonths = [];
+    for (let y = 2020; y <= 2025; y++) {
+      for (let m = 1; m <= 12; m++) {
+        const ym = `${y}${String(m).padStart(2, "0")}`;
+        allMonths.push(ym);
+        if (ym === "202506") break;
+      }
+    }
+
+    // ✅ 3. 공통 함수 (값 선택)
+    const getVal = (d) =>
+      energyType === "electric" ? Number(d.useElect || 0) : Number(d.useGas || 0);
+
+    let labels = [];
+    let values = [];
+
+    // ✅ 4. 시도 클릭 → 시군구 평균 계산
+    if (!selectedRegion.countyId) {
+      const countySet = new Set();
+      cleanData.forEach((d) => {
+        if (d.countyId != null) countySet.add(Number(d.countyId));
+      });
+      const countyIds = Array.from(countySet);
+
+      // 시군구별로 yearMonth별 값 저장
+      const countyDataMap = new Map();
+      countyIds.forEach((id) => countyDataMap.set(id, new Map()));
+
+      cleanData.forEach((d) => {
+        const cId = Number(d.countyId);
+        if (!countyDataMap.has(cId)) countyDataMap.set(cId, new Map());
+        countyDataMap.get(cId).set(d.yearMonth, getVal(d));
+      });
+
+      // 월별 평균 계산 (비어있는 월은 0 포함)
+      labels = allMonths;
+      values = labels.map((ym) => {
+        let total = 0;
+        let count = 0;
+        countyIds.forEach((id) => {
+          const val = countyDataMap.get(id)?.get(ym) ?? 0;
+          total += val;
+          count += 1;
+        });
+        return count > 0 ? total / count : 0;
+      });
+    } else {
+      // ✅ 5. 시군구 클릭 → 개별 그래프
+      const myData = new Map();
+      cleanData.forEach((d) => {
+        if (Number(d.countyId) === Number(selectedRegion.countyId)) {
+          myData.set(d.yearMonth, getVal(d));
+        }
+      });
+      labels = allMonths;
+      values = labels.map((ym) => myData.get(ym) ?? 0);
+    }
+
+    // ✅ 기존 차트 제거 후 새로 그림
+    if (chartInstance.current) chartInstance.current.destroy();
+    const ctx = chartRef.current.getContext("2d");
+
+    // ✅ 6. 차트 생성
+    chartInstance.current = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label:
+              energyType === "electric"
+                ? selectedRegion.countyId
+                  ? "전기 사용량 (MWh)"
+                  : "전기 사용량 평균 (MWh)"
+                : selectedRegion.countyId
+                ? "가스 사용량 (천㎥)"
+                : "가스 사용량 평균 (천㎥)",
+            data: values,
+            borderColor: energyType === "electric" ? "#3b82f6" : "#f97316",
+            backgroundColor:
+              energyType === "electric" ? "#3b82f633" : "#f9731633",
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (context) =>
+                `${context.dataset.label}: ${context.parsed.y.toLocaleString()}`,
+            },
+          },
+          legend: {
+            display: true,
+            position: "top",
+            labels: { boxWidth: 14, color: "#333", font: { size: 13 } },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { callback: (v) => v.toLocaleString() },
+          },
+          x: {
+            ticks: { autoSkip: true, maxTicksLimit: 8 },
+          },
+        },
+      },
+    });
+  }, [selectedRegion, selectedRegionData, energyType, mainTab]);
+
+  // ✅ 선택 전 안내 문구
+  if (!selectedRegion) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "420px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#888",
+        }}
+      >
+        📍 왼쪽 지도에서 지역을 선택해주세요.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width: "100%", height: "420px", paddingTop: "8px" }}>
+      <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
+}

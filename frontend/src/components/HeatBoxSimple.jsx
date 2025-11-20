@@ -1,0 +1,491 @@
+// src/components/HeatBoxSimple.jsx
+// MapLibre 기반 전국 히트박스 (CSV + sgg.json 사용)
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Map as ReactMap, Source, Layer, NavigationControl } from "react-map-gl";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import Papa from "papaparse";
+
+/* -------- 작은 스타일(컴포넌트 내부에 정의) -------- */
+const styles = `
+.heatbox { display:flex; flex-direction:column; gap:10px; height:100%; }
+.hb-legend { display:flex; gap:8px; align-items:center; font-size:12px; color:#666; }
+.hb-legend i { display:inline-block; width:160px; height:10px; border-radius:999px; }
+.hb-monthbar { display:flex; gap:4px; align-items:center; padding:8px 0; }
+.hb-m { min-width:36px; height:28px; border:1px solid #e5e7eb; background:#fff; border-radius:6px; font-size:13px; cursor:pointer; }
+.hb-m[disabled] { opacity:.35; cursor:not-allowed; }
+.hb-m.active { background:#ffedd5; border-color:#fdba74; font-weight:700; }
+.hb-btn { height:28px; padding:0 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; font-size:12px; }
+.hb-warn { margin-top:6px; padding:10px 12px; border:1px solid #ffe58f; background:#fffbe6; border-radius:8px; color:#8b5e00; font-size:13px; }
+`;
+
+const pad2 = (n) => (n < 10 ? `0${n}` : String(n));
+const onlyDigits = (s) => String(s ?? "").replace(/\D+/g, "");
+const toYYYY_MM = (yyyymm) => `${yyyymm.slice(0, 4)}-${yyyymm.slice(4, 6)}`;
+
+const norm = (s) =>
+  String(s ?? "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[^\w가-힣]+/g, " ")
+    .replace(/\s+/g, "")
+    .trim();
+
+const CANDS = {
+  ym:   ["사용년월", "기준년월", "년월", "yyyymm", "ym", "month", "기간", "연월", "월(yyyymm)"],
+  sgg5: ["시군구코드", "sigcd", "sggcd", "adm_drcd", "adm_cd5", "sig_cd5", "code"],
+  law10:["법정동코드", "법정동코드10자리", "adm_cd", "법정동", "법정코드", "hid_cd"],
+  elec: ["전기사용량", "전력사용량", "전력", "전력량", "electricity", "mwh", "elec"],
+  gas:  ["가스사용량", "도시가스사용량", "gas", "gj", "citygas", "가스"],
+};
+
+const detect = (headers, wants) => {
+  const H = headers.map((h) => [h, norm(h)]);
+  for (const w of wants) {
+    const hit = H.find(([, n]) => n === norm(w));
+    if (hit) return hit[0];
+  }
+  for (const w of wants) {
+    const hit = H.find(([, n]) => n.includes(norm(w)));
+    if (hit) return hit[0];
+  }
+  return null;
+};
+
+// Polygon / MultiPolygon → bbox 중심점
+function bboxCenter(geom) {
+  const go = (coords, acc) => {
+    for (const c of coords) {
+      if (typeof c[0] === "number") {
+        const [lng, lat] = c;
+        acc.minX = Math.min(acc.minX, lng);
+        acc.maxX = Math.max(acc.maxX, lng);
+        acc.minY = Math.min(acc.minY, lat);
+        acc.maxY = Math.max(acc.maxY, lat);
+      } else {
+        go(c, acc);
+      }
+    }
+  };
+
+  if (!geom) return null;
+  const acc = { minX: 999, maxX: -999, minY: 999, maxY: -999 };
+  if (geom.type === "Polygon") go(geom.coordinates, acc);
+  else if (geom.type === "MultiPolygon") go(geom.coordinates, acc);
+  else return null;
+
+  return [(acc.minX + acc.maxX) / 2, (acc.minY + acc.maxY) / 2];
+}
+
+/**
+ * props
+ *  - year:   부모(EnergyUsage / GasEmission)에서 선택한 연도 (예: 2025)
+ *  - metric: "elec" | "gas"
+ */
+export default function HeatBoxSimple({
+  csvUrl = "/전체_에너지_2020-2025_통합_v2.csv",
+  sggGeoUrl = "/korea/sgg.json",
+
+  forceYmKey,
+  forceSggKey,
+  forceElecKey,
+  forceGasKey,
+
+  year,
+  metric = "elec",
+
+  autoPlay = false,
+  intervalMs = 900,
+}) {
+  const [warn, setWarn] = useState("");
+  const [normalize] = useState(true);
+
+  const [months, setMonths] = useState([]); // CSV 전체 YYYY-MM 리스트
+  const [idx, setIdx] = useState(0);        // months 인덱스
+  const [playing, setPlaying] = useState(autoPlay);
+  const [speed] = useState(1);
+
+  // autoPlay가 true일 때, 데이터 준비 후 한 번 자동으로 재생 시작했는지 여부
+  const [autoStarted, setAutoStarted] = useState(false);
+
+  const selectedYear = String(year ?? "");
+  const currentMonth = months[idx] || "-";
+
+  // 시군구 코드 → 중심좌표
+  const centersRef = useRef(new Map());
+  // ym → {전기/가스 값}
+  const bucketsRef = useRef({
+    elec: new Map(), // Map<"YYYY-MM", Array<{lng,lat,value}>>
+    gas: new Map(),
+  });
+
+  const [centersReady, setCentersReady] = useState(false);
+
+  /* 1) 시군구 GeoJSON 로드 */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(sggGeoUrl);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const gj = await r.json();
+
+        const map = new Map();
+        for (const f of gj.features || []) {
+          const p = f.properties || {};
+          const raw =
+            p.SIG_CD ??
+            p.SGG_CD ??
+            p.ADM_DR_CD ??
+            p.code ??
+            p.sig_cd ??
+            p.sgg_cd;
+          if (!raw) continue;
+          const code5 = String(raw).padStart(5, "0").slice(0, 5);
+          const center = bboxCenter(f.geometry);
+          if (center) map.set(code5, center);
+        }
+
+        centersRef.current = map;
+        setCentersReady(true);
+        if (!map.size) setWarn("⚠ sgg.json에서 좌표를 계산하지 못했습니다.");
+      } catch (e) {
+        console.error(e);
+        setWarn("⚠ /korea/sgg.json 로드 실패");
+      }
+    })();
+  }, [sggGeoUrl]);
+
+  /* 2) CSV 로드 & 파싱 (centersReady 이후) */
+  useEffect(() => {
+    if (!centersReady) {
+      console.log("⏳ centers 준비 전 → CSV 대기");
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(csvUrl, { cache: "no-cache" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        let text = await res.text();
+        if (/<!doctype|<html/i.test(text.slice(0, 200))) {
+          throw new Error("CSV_URL_RETURNED_HTML");
+        }
+        text = text.replace(/^\uFEFF/, "");
+
+        const parsed = Papa.parse(text, {
+          header: true,
+          skipEmptyLines: "greedy",
+          dynamicTyping: true,
+          transformHeader: (h) =>
+            String(h)
+              .replace(/\([^)]*\)/g, "")
+              .replace(/\t/g, " ")
+              .replace(/\s+/g, " ")
+              .trim(),
+        });
+
+        const rows = Array.isArray(parsed.data) ? parsed.data : [];
+        if (!rows.length) {
+          setWarn("⚠ CSV가 비어있습니다.");
+          return;
+        }
+
+        const headers = parsed.meta.fields || Object.keys(rows[0]);
+        const auto = {
+          ymKey: detect(headers, CANDS.ym),
+          sgg5Key: detect(headers, CANDS.sgg5),
+          law10Key: detect(headers, CANDS.law10),
+          elecKey: detect(headers, CANDS.elec),
+          gasKey: detect(headers, CANDS.gas),
+        };
+
+        const ymKey = forceYmKey || auto.ymKey;
+        const sgg5Key = forceSggKey || auto.sgg5Key || auto.law10Key;
+        const elecKey = forceElecKey || auto.elecKey;
+        const gasKey = forceGasKey || auto.gasKey;
+
+        if (!ymKey || !sgg5Key || (!elecKey && !gasKey)) {
+          setWarn(
+            "⚠ CSV 헤더 매핑 실패(사용년월/시군구코드/전기·가스). props로 강제 매핑하세요."
+          );
+          return;
+        }
+
+        const fixNum = (v) =>
+          v == null || v === ""
+            ? null
+            : typeof v === "number"
+            ? v
+            : Number(String(v).replace(/,/g, ""));
+
+        const centers = centersRef.current;
+        const elec = new Map();
+        const gas = new Map();
+        const ymSet = new Set();
+
+        for (const r of rows) {
+          const rawYM = r[ymKey];
+          const dd = onlyDigits(String(rawYM ?? ""));
+          if (dd.length < 6) continue;
+          const ym = toYYYY_MM(dd.slice(0, 6)); // "YYYY-MM"
+          ymSet.add(ym);
+
+          const code5 = onlyDigits(String(r[sgg5Key] ?? ""))
+            .slice(0, 5)
+            .padStart(5, "0");
+          const ll = centers.get(code5);
+          if (!ll) continue;
+
+          const eVal = fixNum(r[elecKey]);
+          const gVal = fixNum(r[gasKey]);
+
+          if (Number.isFinite(eVal)) {
+            if (!elec.has(ym)) elec.set(ym, []);
+            elec.get(ym).push({ lng: ll[0], lat: ll[1], value: eVal });
+          }
+          if (Number.isFinite(gVal)) {
+            if (!gas.has(ym)) gas.set(ym, []);
+            gas.get(ym).push({ lng: ll[0], lat: ll[1], value: gVal });
+          }
+        }
+
+        bucketsRef.current = { elec, gas };
+
+        const ys = Array.from(ymSet).sort();
+        setMonths(ys);
+
+        // 처음 로딩 시 선택 연도의 첫 데이터 달로 이동
+        const yStr = selectedYear || ys[0]?.slice(0, 4);
+        if (yStr) {
+          const firstYm = ys.find((m) => m.startsWith(String(yStr))) || ys[0];
+          const gi = ys.findIndex((m) => m === firstYm);
+          if (gi >= 0) setIdx(gi);
+        }
+
+        setWarn(ys.length ? "" : "⚠ CSV에서 유효한 월 데이터를 찾지 못했습니다.");
+        // CSV가 새로 로딩되면 auto-start 플래그도 리셋
+        setAutoStarted(false);
+      } catch (e) {
+        console.error(e);
+        setWarn("⚠ CSV 로드/파싱 실패");
+      }
+    })();
+  }, [
+    csvUrl,
+    forceYmKey,
+    forceSggKey,
+    forceElecKey,
+    forceGasKey,
+    centersReady,
+    selectedYear,
+  ]);
+
+  /* 3) 선택된 연도 + metric에서 실제 데이터가 있는 월 목록 */
+  const metricYearMonths = useMemo(() => {
+    if (!selectedYear) return [];
+    const bucket = bucketsRef.current[metric];
+    if (!bucket) return [];
+    return Array.from(bucket.keys())
+      .filter((m) => m.startsWith(selectedYear))
+      .sort();
+  }, [metric, selectedYear, months]);
+
+  /* 3-1) autoPlay: CSV/월 데이터가 준비되면 한 번만 자동으로 재생 시작 */
+  useEffect(() => {
+    if (!autoPlay) return;             // 부모에서 autoPlay 안 켜면 무시
+    if (autoStarted) return;           // 이미 한 번 자동 시작했으면 또 안 함
+    if (months.length === 0) return;
+    if (metricYearMonths.length === 0) return;
+
+    const firstYm = metricYearMonths[0];
+    if (firstYm) {
+      const gi = months.findIndex((m) => m === firstYm);
+      if (gi >= 0) setIdx(gi);
+    }
+
+    setPlaying(true);         // ▶ 자동 재생 시작
+    setAutoStarted(true);
+  }, [autoPlay, autoStarted, months, metricYearMonths]);
+
+  // 연도나 metric 바뀌면 자동시작 플래그 다시 초기화
+  useEffect(() => {
+    setAutoStarted(false);
+  }, [selectedYear, metric]);
+
+  /* 4) 연도/metric이 바뀌면, 그 연도의 첫 데이터 달로만 맞춰주고
+        자동재생 상태는 건드리지 않는다. */
+  useEffect(() => {
+    if (!selectedYear || months.length === 0) return;
+    if (metricYearMonths.length === 0) return;
+
+    if (!metricYearMonths.includes(currentMonth)) {
+      const firstYm = metricYearMonths[0];
+      const gi = months.findIndex((m) => m === firstYm);
+      if (gi >= 0) setIdx(gi);
+    }
+  }, [selectedYear, metric, months, metricYearMonths, currentMonth]);
+
+  /* 5) 자동 재생 : 해당 연도에서 마지막 데이터 달까지 가면 멈춤 */
+  useEffect(() => {
+    if (!playing || metricYearMonths.length === 0) return;
+
+    const arr = metricYearMonths;
+    const cur = currentMonth;
+    let localIdx = arr.indexOf(cur);
+    if (localIdx < 0) localIdx = 0;
+
+    const step = Math.max(150, intervalMs / (speed || 1));
+
+    const timer = setInterval(() => {
+      const nextLocal = localIdx + 1;
+
+      if (nextLocal >= arr.length) {
+        setPlaying(false); // 마지막 달 → 정지
+        return;
+      }
+
+      const nextYm = arr[nextLocal];
+      const gi = months.findIndex((m) => m === nextYm);
+      if (gi >= 0) setIdx(gi);
+    }, step);
+
+    return () => clearInterval(timer);
+  }, [playing, metricYearMonths, currentMonth, months, intervalMs, speed]);
+
+  /* 6) 현재 월 → GeoJSON */
+  const geojson = useMemo(() => {
+    const bucket = bucketsRef.current[metric];
+    const src = bucket?.get(currentMonth) || [];
+
+    let maxV = 1;
+    if (normalize && src.length) {
+      maxV = src.reduce((m, d) => (d.value > m ? d.value : m), 0) || 1;
+    }
+
+    return {
+      type: "FeatureCollection",
+      features: src.map((d) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [d.lng, d.lat] },
+        properties: {
+          w: normalize ? Math.max(0.05, d.value / maxV) : d.value,
+        },
+      })),
+    };
+  }, [metric, normalize, currentMonth]);
+
+  const heatPaint = useMemo(
+    () => ({
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 18, 7, 28, 10, 40],
+      "heatmap-intensity": 1.0,
+      "heatmap-opacity": 0.9,
+      "heatmap-weight": ["coalesce", ["get", "w"], 0],
+      "heatmap-color": [
+        "interpolate",
+        ["linear"],
+        ["heatmap-density"],
+        0.0,
+        "rgba(47,128,237,0)",
+        0.2,
+        "rgb(86,204,242)",
+        0.4,
+        "rgb(255,209,102)",
+        0.6,
+        "rgb(252,163,17)",
+        1.0,
+        "rgb(230,57,70)",
+      ],
+    }),
+    []
+  );
+
+  const jumpTo = (m) => {
+    if (!selectedYear) return;
+    const ym = `${selectedYear}-${pad2(m)}`;
+    const gi = months.findIndex((x) => x === ym);
+    if (gi >= 0) setIdx(gi);
+  };
+
+  /* 7) 월 버튼 활성/비활성 정보 */
+  const monthHasData = useMemo(() => {
+    const set = new Set(metricYearMonths);
+    const has = {};
+    for (let m = 1; m <= 12; m++) {
+      has[m] = set.has(`${selectedYear}-${pad2(m)}`);
+    }
+    return has;
+  }, [selectedYear, metricYearMonths]);
+
+  return (
+    <div className="heatbox" style={{ height: "100%" }}>
+      <style>{styles}</style>
+
+      {/* 상단: 재생버튼 + 현재 월 + 범례 */}
+      <div className="hb-legend">
+        <button
+          className="hb-btn"
+          onClick={() => setPlaying((v) => !v)}
+          title="자동 재생"
+        >
+          {playing ? "⏸ 재생중" : "▶ 재생"}
+        </button>
+        <span style={{ marginLeft: 6 }}></span>
+        <span style={{ marginLeft: "auto" }}>낮음</span>
+        <i
+          style={{
+            background:
+              "linear-gradient(90deg,#2f80ed,#56ccf2,#ffd166,#fca311,#e63946)",
+          }}
+        />
+        <span>높음</span>
+      </div>
+
+      {/* 지도 */}
+      <div style={{ flex: 1, minHeight: 360 }}>
+        <ReactMap
+          mapLib={maplibregl}
+          initialViewState={{
+            longitude: 127.8,
+            latitude: 36.3,
+            zoom: 6.2,
+            minZoom: 5.8,
+            maxZoom: 13,
+          }}
+          mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+          reuseMaps
+          style={{ height: "100%", width: "100%" }}
+        >
+          <NavigationControl position="bottom-right" />
+          <Source id="heat-src" type="geojson" data={geojson} />
+          <Layer id="heat-lyr" type="heatmap" source="heat-src" paint={heatPaint} />
+        </ReactMap>
+      </div>
+
+      {/* 월 선택 버튼 */}
+      <div className="hb-monthbar">
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+          const has = monthHasData[m];
+          const active =
+            has &&
+            currentMonth !== "-" &&
+            currentMonth === `${selectedYear}-${pad2(m)}`;
+          return (
+            <button
+              key={m}
+              className={`hb-m ${active ? "active" : ""}`}
+              disabled={!has}
+              onClick={() => has && jumpTo(m)}
+              title={has ? `${selectedYear}-${pad2(m)}` : "데이터 없음"}
+            >
+              {m}월
+            </button>
+          );
+        })}
+      </div>
+
+      {warn && <div className="hb-warn">{warn}</div>}
+    </div>
+  );
+}

@@ -1,0 +1,132 @@
+/* src/components/MapKorea.css */
+
+/* ───────── 컨테이너 ───────── */
+.map-host{
+  height: 360px;           /* 카드 안에서 보기 좋은 높이 */
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ───────── 경고 박스 ───────── */
+.warn-box{
+  position: absolute;
+  left: 12px; top: 12px;
+  z-index: 1001;
+  background:#fff7e6;
+  border:1px solid #ffe58f;
+  color:#6b4e00;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+/* ───────── 왼쪽 상단 툴바(추가) ───────── */
+.map-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.7); /* 살짝 반투명 */
+  padding: 5px 8px;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.month-label {
+  background: #ffffffcc;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.map-energy-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.map-energy-buttons button {
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.25s ease; /* 부드러운 전환 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.map-energy-buttons button:hover { background: #f4f4f4; }
+.map-energy-buttons button.active-electric {
+  background: #007bff; color: #fff; border-color: #007bff;
+  box-shadow: 0 2px 6px rgba(0, 123, 255, 0.35);
+}
+.map-energy-buttons button.active-gas {
+  background: #ff8c00; color: #fff; border-color: #ff8c00;
+  box-shadow: 0 2px 6px rgba(255, 140, 0, 0.4);
+}
+
+/* ───────── 오른쪽 상단: 시/도로 돌아가기 ───────── */
+.btn-back{
+  position:absolute;
+  right:16px; top:10px; z-index:1002;
+  padding:6px 14px;
+  border-radius:8px;
+  border:1px solid #3a3f55;
+  background:#151a2f; color:#fff;
+  font-size:12px; font-weight:600;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+}
+.btn-back:hover{
+  background:#1f2540; border-color:#596080;
+  transform: translateY(-1px);
+}
+
+/* ───────── 라벨(항상 보이는 툴팁) ───────── */
+.leaflet-tooltip.area-label{
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #fff;
+  font-weight: 800;
+  text-shadow:
+    -1px -1px 0 #0b1020, 1px -1px 0 #0b1020,
+    -1px  1px 0 #0b1020, 1px  1px 0 #0b1020,
+    0 0 6px rgba(0,0,0,0.35);
+  pointer-events: none;
+  font-size: 12px;       /* 시/도 라벨 */
+  line-height: 1.06;
+  letter-spacing: -0.3px;
+  text-align: center;
+  white-space: nowrap;
+}
+.leaflet-tooltip.area-label.sgg{
+  font-weight: 700;
+  font-size: 12px;       /* 시·군·구 라벨 */
+}
+
+/* ───────── 팝업 ───────── */
+.leaflet-popup-content{ margin: 6px 8px; font-weight:700; }
+.leaflet-popup-content-wrapper{
+  background: rgba(20,24,40,0.92);
+  color:#fff; border-radius:8px;
+}
+.leaflet-popup-tip{ background: rgba(20,24,40,0.92); }
+
+/* ───────── 배경/포인터 ───────── */
+/* 지도 컨테이너/타일/페인 배경을 완전 투명으로 (타일 안 써도 깔끔) */
+.leaflet-container,
+.leaflet-pane,
+.leaflet-tile-pane,
+.leaflet-map-pane {
+  background: transparent !important;
+}
+
+/* 손가락 포인터 */
+.cursor-pointer { cursor: pointer; }

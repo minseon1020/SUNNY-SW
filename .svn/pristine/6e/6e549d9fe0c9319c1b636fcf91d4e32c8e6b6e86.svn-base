@@ -1,0 +1,236 @@
+// src/pages/Dashboard.jsx
+import { useState, useEffect } from "react";
+import "./Dashboard.css";
+import MapKorea from "../components/MapKorea";
+import ChartSection from "../components/ChartSection";
+
+function Dashboard() {
+  // ── 상태
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [selectedRegionData, setSelectedRegionData] = useState([]);
+  const [sidoTotalData, setSidoTotalData] = useState([]);
+  const [energyType, setEnergyType] = useState("electric"); // ⚡/🔥 (차트용)
+  const [mainTab, setMainTab] = useState("energy");
+  const [energyData, setEnergyData] = useState([]);        // 전국 월별 합계(차트용)
+  const [mapEnergyData, setMapEnergyData] = useState([]);  // ⭐ 지도용 시군구 상세 데이터
+  const [loading, setLoading] = useState(true);
+
+  // 지도용으로 불러올 시/도 코드 (geojson이랑 맞춰서)
+  const SIDO_CODES = [
+    "11", "26", "27", "28", "29",
+    "30", "31", "36",
+    "41", "42", "43", "44", "45", "46", "47", "48",
+    "50",
+  ];
+
+  /** ✅ 1) 전국 데이터 로드 (전국 월별 합계 — 차트용) */
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        setEnergyData([]);
+
+        const res = await fetch("/api/energy?cityId=0&countyId=0");
+        const json = await res.json();
+
+        const nationwide = Array.isArray(json?.items)
+          ? json.items
+          : Array.isArray(json)
+          ? json
+          : [];
+
+        console.log("[Dashboard] nationwide sample:", nationwide.slice(0, 10));
+        setEnergyData(nationwide);
+        setSelectedRegionData(nationwide); // 전국 기본 차트
+      } catch (err) {
+        console.error("전체 에너지 데이터 로드 실패:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  /** ✅ 2) 지도용 데이터 로드 (시/도별 시군구 상세 데이터 모아서 한 번에)
+   *  백엔드 안 건드리고 /api/energy?cityId=11,26,27... 여러 번 호출해서 합침
+   */
+  useEffect(() => {
+    (async () => {
+      try {
+        const requests = SIDO_CODES.map((code) =>
+          fetch(`/api/energy?cityId=${code}`).then((r) => r.json())
+        );
+
+        const results = await Promise.all(requests);
+
+        const all = [];
+        results.forEach((json, idx) => {
+          const arr = Array.isArray(json?.items)
+            ? json.items
+            : Array.isArray(json)
+            ? json
+            : [];
+          console.log(
+            `[Dashboard] mapEnergyData 시도=${SIDO_CODES[idx]} 개수=`,
+            arr.length
+          );
+          all.push(...arr);
+        });
+
+        console.log("[Dashboard] mapEnergyData 총 개수:", all.length);
+        setMapEnergyData(all);
+      } catch (err) {
+        console.error("지도용 에너지 데이터 로드 실패:", err);
+      }
+    })();
+  }, []); // 처음 한 번만
+
+  /** ====================================================================================
+   *  3) 지도 클릭 시 지역별 데이터 로드 + 시도 평균 로드 (차트용, 기존 로직 유지)
+   * ==================================================================================== */
+  useEffect(() => {
+    if (!selectedRegion) {
+      setSelectedRegionData(energyData);
+      setSidoTotalData([]);
+      return;
+    }
+
+    let url = "/api/energy";
+    const cityId = Number(selectedRegion.cityId);
+    const countyId = Number(selectedRegion.countyId);
+
+    if (cityId && countyId) {
+      url += `?cityId=${cityId}&countyId=${countyId}`;
+    } else if (cityId) {
+      url += `?cityId=${cityId}`;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+
+        const dataArray = Array.isArray(json?.items)
+          ? json.items
+          : Array.isArray(json)
+          ? json
+          : [];
+
+        setSelectedRegionData(dataArray);
+
+        // 시도 평균 데이터
+        if (cityId) {
+          const sidoRes = await fetch(
+            `/api/energy?cityId=${cityId}&countyId=0`
+          );
+          const sidoJson = await sidoRes.json();
+
+          const sidoArr = Array.isArray(sidoJson?.items)
+            ? sidoJson.items
+            : Array.isArray(sidoJson)
+            ? sidoJson
+            : [];
+
+          setSidoTotalData(sidoArr);
+        } else {
+          setSidoTotalData([]);
+        }
+      } catch (err) {
+        console.error("선택 지역 데이터 로드 실패:", err);
+      }
+    })();
+  }, [selectedRegion, energyData]);
+
+  // 로딩 화면
+  if (loading) {
+    return (
+      <div className="dashboard">
+        <h1>에너지 정보 대시보드</h1>
+        <p>📡 데이터를 불러오는 중입니다...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard">
+      <h1>에너지 정보 대시보드</h1>
+      <p>종합 에너지 데이터, 사용량 추이, 예측 시나리오를 한눈에 볼 수 있는 에너지 정보 대시보드입니다.</p>
+
+      <div className="dashboard-grid">
+        {/* 지도 */}
+        <div className="card map">
+          <h3>지역별 에너지 소비량 (2025년 6월 기준)</h3>
+          <div className="panel-body" style={{ height: 500 }}>
+            <MapKorea
+              onRegionSelect={setSelectedRegion}
+              allEnergyData={mapEnergyData}   // ⭐ 지도는 상세 데이터 사용
+              yearMonth="202506"              // ⭐ 2025년 6월만 히트맵
+            />
+          </div>
+        </div>
+
+        {/* 차트 */}
+        <div className="card chart">
+          <h3>
+            {selectedRegion
+              ? `${selectedRegion.cityName || ""} ${
+                  selectedRegion.countyName || ""
+                }`.trim()
+              : "전국 에너지 / 탄소 배출량"}
+          </h3>
+
+          <div className="main-tabs">
+            <button
+              className={mainTab === "energy" ? "active" : ""}
+              onClick={() => setMainTab("energy")}
+            >
+              에너지 사용량
+            </button>
+            <button
+              className={mainTab === "co2" ? "active" : ""}
+              onClick={() => setMainTab("co2")}
+            >
+              탄소 배출량
+            </button>
+          </div>
+
+          <div className="sub-tabs">
+            <button
+              className={energyType === "electric" ? "active" : ""}
+              onClick={() => setEnergyType("electric")}
+            >
+              ⚡ 전기
+            </button>
+            <button
+              className={energyType === "gas" ? "active" : ""}
+              onClick={() => setEnergyType("gas")}
+            >
+              🔥 가스
+            </button>
+          </div>
+
+          <ChartSection
+            selectedRegion={selectedRegion}
+            selectedRegionData={selectedRegionData}
+            nationalData={energyData}
+            sidoData={sidoTotalData}   // 시도 평균 데이터
+            energyType={energyType}
+            mainTab={mainTab}
+          />
+        </div>
+
+        {/* 예측 카드 */}
+        <div className="card chart">
+          <h3>~2030 에너지 예측 시나리오</h3>
+          <div className="chart-placeholder">📈 예측 그래프 자리</div>
+        </div>
+
+        <div className="card chart">
+          <h3>~2030 기상청 온도 예측</h3>
+          <div className="chart-placeholder">🌡 예측 그래프 자리</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default Dashboard;
