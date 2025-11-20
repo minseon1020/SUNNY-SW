@@ -6,25 +6,25 @@ import React, { useEffect, useMemo, useState } from "react";
 import styles from "./EnergyUsage.module.css";      // 레이아웃은 그대로 재사용
 import HeatBoxSimple from "../components/HeatBoxSimple";
 
-/* ------------------------- 온실가스 계수 ------------------------- */
+//  온실가스 계수 
 // 단위: tCO2eq / MWh  (전기는 kWh를 MWh로 맞춰서 사용했다고 가정)
 const GHG_ELECTRICITY_COEFF = 0.4541;   // 전기
 const GHG_GAS_COEFF = 0.202;           // 도시가스
 
-/* ------------------------- 내부 유틸: API prefix ------------------------- */
+//  내부 유틸: API prefix 
 function buildApiPrefix(apiBase) {
   const base = (apiBase ?? "").replace(/\/$/, "");
   return base.endsWith("/api") ? base : `${base}/api`;
 }
 
-/* ------------------------- YEAR_MONTH 정규화 ------------------------- */
+// YEAR_MONTH 정규화
 function ymToYYYYMM(x) {
   const m = String(x ?? "").match(/(\d{4})\D*?(\d{1,2})/);
   if (!m) return null;
   return `${m[1]}${m[2].padStart(2, "0")}`;
 }
 
-/* ------------------------- 소도구 ------------------------- */
+// 소도구
 function flatten(obj, prefix = "", out = {}) {
   for (const [k, v] of Object.entries(obj || {})) {
     const key = prefix ? `${prefix}.${k}` : k;
@@ -46,8 +46,8 @@ const num = (v) => {
   return Number.isFinite(x) ? x : 0;
 };
 
-/* ------------------------- 국가 월별 에너지 합계 로드 ------------------------- */
-/** EnergyUsage.jsx 의 fetchCountryMonthly 를 그대로 복사한 함수 */
+// 국가 월별 에너지 합계 로드
+// EnergyUsage.jsx 의 fetchCountryMonthly 를 그대로 복사한 함수 
 async function fetchCountryEnergyMonthly({ apiBase, year }) {
   const prefix = buildApiPrefix(apiBase);
 
@@ -101,7 +101,7 @@ async function fetchCountryEnergyMonthly({ apiBase, year }) {
   return { elec, gas };
 }
 
-/* ------------------------- 미니 차트 컴포넌트 ------------------------- */
+//  미니 차트 컴포넌트 
 function ChartMini({
   title,
   unit,
@@ -214,7 +214,6 @@ function ChartMini({
   );
 }
 
-/* ===================================================================== */
 
 export default function GasEmission() {
   const now = useMemo(() => new Date(), []);
@@ -349,7 +348,7 @@ export default function GasEmission() {
             </div>
 
             <div className={styles.panel} style={{ height: 720 }}>
-              {/* 🔥 HeatBoxSimple 그대로 사용 → EnergyUsage 페이지와 동일한 재생 로직 */}
+              {/*  HeatBoxSimple 그대로 사용 → EnergyUsage 페이지와 동일한 재생 로직 */}
               <HeatBoxSimple
                 year={year}
                 metric={source}   // 'elec' | 'gas'

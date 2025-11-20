@@ -3,20 +3,20 @@ import React, { useEffect, useMemo, useState } from "react";
 import styles from "./EnergyUsage.module.css";
 import HeatBoxSimple from "../components/HeatBoxSimple";
 
-/* ------------------------- 내부 유틸: API prefix 안전 조립 ------------------------- */
+//  내부 유틸: API prefix 안전 조립  
 function buildApiPrefix(apiBase) {
   const base = (apiBase ?? "").replace(/\/$/, "");
   return base.endsWith("/api") ? base : `${base}/api`;
 }
 
-/* ------------------------- 내부 유틸: YEAR_MONTH 정규화 ------------------------- */
+// 내부 유틸: YEAR_MONTH 정규화 
 function ymToYYYYMM(x) {
   const m = String(x ?? "").match(/(\d{4})\D*?(\d{1,2})/);
   if (!m) return null;
   return `${m[1]}${m[2].padStart(2, "0")}`;
 }
 
-/* ------------------------- 국가 월별 합계 로드 (전기/가스) ------------------------- */
+//국가 월별 합계 로드 (전기/가스) 
 async function fetchCountryMonthly({ apiBase, year }) {
   const prefix = buildApiPrefix(apiBase);
 
@@ -70,7 +70,7 @@ async function fetchCountryMonthly({ apiBase, year }) {
   return { elec, gas };
 }
 
-/* ------------------------- 소도구 ------------------------- */
+// 소도구  
 function flatten(obj, prefix = "", out = {}) {
   for (const [k, v] of Object.entries(obj || {})) {
     const key = prefix ? `${prefix}.${k}` : k;
@@ -92,9 +92,9 @@ const num = (v) => {
   return Number.isFinite(x) ? x : 0;
 };
 
-/* ------------------------- 미니 차트 컴포넌트 ------------------------- */
+// 미니 차트 컴포넌트 
 
-// 값 축약 표시용 포맷터 (지금은 사용 안 하지만 남겨둠)
+// 값 축약 표시용 포맷터 
 function formatValue(v) {
   const n = Number(v) || 0;
   if (n === 0) return "";
@@ -123,7 +123,7 @@ function formatValue(v) {
   return `${s}${suffix}`;
 }
 
-/* ------------------------- 미니 차트 컴포넌트 ------------------------- */
+// 미니 차트 컴포넌트 
 function ChartMini({
   title,
   unit,
@@ -260,8 +260,6 @@ function ChartMini({
   );
 }
 
-/* ===================================================================== */
-
 export default function EnergyUsage() {
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(now.getFullYear());
@@ -381,7 +379,7 @@ export default function EnergyUsage() {
               <HeatBoxSimple
                 apiBase={API_BASE}
                 year={year}
-                metric={metric} // 🔥 전기/가스 기준
+                metric={metric} // 전기/가스 기준
                 autoPlay={true}
                 intervalMs={900}
               />

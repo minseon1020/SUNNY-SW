@@ -19,7 +19,7 @@
   line-height: 1.6;
 }
 
-/* 🧩 메인 4칸 레이아웃 */
+/*  메인 4칸 레이아웃 */
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -27,7 +27,7 @@
   gap: 26px;
 }
 
-/* 🧱 카드 공통 스타일 */
+/*  카드 공통 스타일 */
 .card {
   background: #fff;
   border-radius: 14px;
@@ -45,7 +45,7 @@
   font-weight: 700;
 }
 
-/* 🗺 지도 카드 */
+/*  지도 카드 */
 .card.map { height: 580px; }
 
 .card.map .leaflet-container {
@@ -55,7 +55,7 @@
   border-radius: 12px;
 }
 
-/* 📊 차트 카드 */
+/*  차트 카드 */
 .card.chart {
   height: 580px;
   display: flex;
@@ -67,7 +67,7 @@
   height: 400px !important;
 }
 
-/* 📦 차트 플레이스홀더(임시 자리 표시) */
+/*  차트 플레이스홀더(임시 자리 표시) */
 .chart-placeholder {
   height: 250px;
   display: flex;
@@ -79,7 +79,7 @@
   font-size: 16px;
 }
 
-/* 🎛 탭 버튼 */
+/*  탭 버튼 */
 .main-tabs,
 .sub-tabs {
   display: flex;
@@ -112,7 +112,7 @@ button.active {
   display: none !important;
 }
 
-/* 🧭 반응형 */
+/*  반응형 */
 @media (max-width: 1200px) {
   .dashboard-grid {
     grid-template-columns: 1fr;

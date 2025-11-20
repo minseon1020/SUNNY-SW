@@ -216,7 +216,6 @@ function GasStats() {
     );
   };
 
-  // ... (return JSX 부분은 기존과 동일) ...
   return (
     <div className="stats-sidebar-layout">
       
